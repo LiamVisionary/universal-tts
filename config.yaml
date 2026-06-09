@@ -1,0 +1,192 @@
+server:
+  host: 127.0.0.1
+  port: 8799
+memory:
+  reserve_gb: 12
+providers:
+  qwen3:
+    kind: qwen3
+    category: tts
+    cwd: /Users/liam/voice-lab/qwen3-mlx
+    command: /Users/liam/voice-lab/mlx-chatterbox/.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8766
+    port: 8766
+    base_url: http://127.0.0.1:8766
+    health_path: /health
+    estimate_gb: 4
+    models:
+      - qwen3-tts-1.7b-custom
+      - qwen3-tts-1.7b-design
+      - qwen3-tts-1.7b-base-clone
+      - qwen3-tts-0.6b-custom
+      - qwen3-tts-0.6b-base-clone
+      - tts-1
+    notes: Qwen3-TTS MLX adapter; Apple Silicon local true streaming via mlx-audio streaming_step, raw PCM chunks, and resident 0.6B Base 8-bit model with voice01 reference-clone ICL profile.
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: mlx-audio-streaming-step
+      streaming_implementation: mlx-audio-qwen3-streaming-step
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      default_max_new_tokens: 512
+      supports_batching: true
+      supports_native_batching: true
+      max_batch_size: 4
+      batch_window_ms: 25
+      batch_path: /v1/audio/batches
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  miso:
+    kind: miso
+    category: tts
+    cwd: /Users/liam/voice-lab/MisoTTS
+    command: /Users/liam/.local/bin/misotts-server
+    port: 8775
+    base_url: http://127.0.0.1:8775
+    health_path: /health
+    estimate_gb: 10
+    models:
+      - miso-tts-8b
+    notes: MisoTTS adapter; applies duration/tail-silence defaults to avoid clipping.
+    options:
+      stream_path: /v1/audio/speech-stream-pcm
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: true-decoder-pcm-experimental
+      streaming_implementation: provider-generate-stream
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      default_voice: voice1-all-samples
+      default_temperature: 0.55
+      default_topk: 20
+      default_chunk_frames: 1
+      default_seed: 1003
+      voice_aliases:
+        liam-default: voice1-all-samples
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 4
+      batch_window_ms: 25
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  chatterbox-turbo:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/mlx-chatterbox
+    command: /Users/liam/voice-lab/mlx-chatterbox/.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8777
+    base_url: http://127.0.0.1:8777
+    health_path: /health
+    port: 8777
+    estimate_gb: 5
+    models:
+      - chatterbox-turbo
+      - ResembleAI/chatterbox-turbo
+    notes: Chatterbox Turbo MLX adapter; Apple Silicon local true streaming with resident mlx-audio model, cached voice conditionals, and raw PCM chunks.
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: mlx-audio-stream-generate
+      streaming_implementation: mlx-audio-plus-chatterbox-turbo-tts-fp16
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      default_stream_chunk_size: 6
+      stream_read_bytes: 240
+      voices:
+        - voice01
+        - voice1-all-samples-10s.wav
+        - Thomas.wav
+        - Taylor.wav
+        - Ryan.wav
+        - Olivia.wav
+        - Miles.wav
+        - Michael.wav
+        - Leonardo.wav
+        - Layla.wav
+        - Julian.wav
+        - Jordan.wav
+        - Jeremiah.wav
+        - Jade.wav
+        - Ian.wav
+        - Henry.wav
+        - Gianna.wav
+        - Gabriel.wav
+        - Everett.wav
+        - Emily.wav
+        - Eli.wav
+        - Elena.wav
+        - Cora.wav
+        - Connor.wav
+        - Axel.wav
+        - Austin.wav
+        - Alice.wav
+        - Alexander.wav
+        - Adrian.wav
+        - Abigail.wav
+      voice_aliases:
+        voice01: voice1-all-samples-10s.wav
+        liam-default: voice1-all-samples-10s.wav
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 4
+      batch_window_ms: 25
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  vibevoice-coreml:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/vibevoice-coreml
+    command: /Users/liam/.local/bin/vibevoice-coreml-server
+    base_url: http://127.0.0.1:8781
+    health_path: /health
+    port: 8781
+    estimate_gb: 4
+    models:
+      - vibevoice
+      - vibevoice-coreml-0.5b
+      - vibevoice-realtime-0.5b
+      - vibevoice-realtime-0.5B
+    notes: VibeVoice CoreML 0.5B adapter for Apple Silicon true decoder PCM streaming; provider-scoped voices endpoint exposes preset voices.
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: true-decoder-pcm
+      streaming_implementation: resident-coreml
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 4
+      batch_window_ms: 25
+      voices_paths: [/v1/audio/voices, /v1/voices]
+      voice_aliases:
+        liam-default: en-Emma_woman
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  vibevoice-cpp:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/vibevoice.cpp
+    command: /Users/liam/.local/bin/vibevoice-cpp-server
+    base_url: http://127.0.0.1:8780
+    health_path: /health
+    port: 8780
+    estimate_gb: 4
+    models:
+      - vibevoice-cpp
+    notes: VibeVoice.cpp adapter; Metal/ggml realtime 0.5B with provider-scoped voices from GGUF voice presets. Current CLI path is full-generation chunk streaming, not true decoder streaming.
+    options:
+      supports_true_streaming: false
+      streaming_mode: full-generate-then-chunk
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 4
+      batch_window_ms: 25
+      voices_paths: [/v1/audio/voices, /v1/voices]
+      formats: [wav, mp3, opus, flac, aac, pcm]

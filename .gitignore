@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local/runtime artifacts
+logs/
+*.log
+*.pid
+*.sock
+.DS_Store
+
+# Editor/OS
+.idea/
+.vscode/
+*.swp
+
+# Generated audio/media outputs
+*.wav
+*.mp3
+*.opus
+*.ogg
+*.flac
+*.aac
+*.pcm
+
+# Local secrets / overrides
+.env
+.env.*
+*.local.yaml
+*.local.yml
