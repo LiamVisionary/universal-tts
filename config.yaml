@@ -193,6 +193,11 @@ providers:
   kitten:
     kind: kitten
     category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: /Users/liam/voice-lab/universal-tts/sidecars/kitten_sidecar.sh
+    base_url: http://127.0.0.1:8782
+    health_path: /health
+    port: 8782
     estimate_gb: 1
     models:
       - KittenML/kitten-tts-mini-0.8
@@ -202,7 +207,7 @@ providers:
       - kitten-tts-micro
       - kitten-tts-nano
       - tts-1
-    notes: KittenTTS in-process ONNX adapter. True realtime streaming via model.generate_stream; raw 24 kHz mono PCM chunks emitted as they come off the model. Lightweight CPU engine (15-80M params, 25-80 MB on disk). All synthesis runs on a single dedicated worker thread because ONNX inference is not safe to interleave from multiple Python threads.
+    notes: "KittenTTS ONNX sidecar (CPU, 15-80M params, 25-80 MB on disk) with 8 built-in voices and a real per-text-chunk generate_stream generator. Runs in a dedicated venv (.kitten-venv) so heavy torch/onnxruntime/misaki deps stay out of the universal-tts core. Stream path is true-decoder PCM: the sidecar yields audio as the ONNX model decodes each text segment."
     options:
       stream_path: /v1/audio/speech-stream
       stream_content_type: audio/pcm
@@ -213,11 +218,19 @@ providers:
       stream_sample_rate: 24000
       stream_channels: 1
       stream_sample_format: pcm16
-      default_model: KittenML/kitten-tts-mini-0.8
+      default_model: KittenML/kitten-tts-nano-0.8
       default_voice: Bella
       default_speed: 1.0
-      default_clean_text: false
-      backend: cpu
+      default_clean_text: true
+      voices:
+        - Bella
+        - Jasper
+        - Luna
+        - Bruno
+        - Rosie
+        - Hugo
+        - Kiki
+        - Leo
       voice_aliases:
         liam-default: Bella
         bruno: Bruno
@@ -228,15 +241,6 @@ providers:
         kiki: Kiki
         leo: Leo
         bella: Bella
-      voices:
-        - Bella
-        - Jasper
-        - Luna
-        - Bruno
-        - Rosie
-        - Hugo
-        - Kiki
-        - Leo
       supports_batching: true
       supports_native_batching: false
       max_batch_size: 4

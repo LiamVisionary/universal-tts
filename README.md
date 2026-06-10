@@ -9,9 +9,18 @@ The current repo covers:
 - Chatterbox Turbo via the local MLX sidecar
 - VibeVoice CoreML
 - VibeVoice.cpp
-- KittenTTS (in-process ONNX CPU engine)
+- KittenTTS (dedicated ONNX sidecar on `.kitten-venv`)
 
 Provider sidecars are owned by Universal TTS and should normally not be called directly by clients. Clients should use the Universal TTS endpoints below so request normalization, model routing, memory checks, lifecycle control, audio format conversion, batching, streaming metadata, and provider quirks stay centralized.
+
+### Sidecar install status
+
+- `qwen3` — MLX sidecar, true streaming, port `8766`
+- `miso` — MisoTTS, port `8775`
+- `chatterbox-turbo` — MLX sidecar, port `8777`
+- `vibevoice-coreml` — CoreML resident, port `8781`
+- `vibevoice-cpp` — ggml/Metal, port `8780`
+- `kitten` — ONNX sidecar, port `8782`, dedicated `.kitten-venv`
 
 ## Service address
 
@@ -66,6 +75,7 @@ Isolated sidecars:
   - Chatterbox Turbo MLX service on :8777
   - VibeVoice CoreML service on :8781
   - VibeVoice.cpp service on :8780
+  - KittenTTS ONNX service on :8782 (dedicated `.kitten-venv`)
 ```
 
 Common code lives in `src/universal_tts/`:
@@ -617,16 +627,18 @@ Adapter/request behavior:
 
 ### `kitten`
 
-Purpose: KittenTTS in-process ONNX adapter. State-of-the-art tiny CPU TTS model (15M–80M parameters, 25–80 MB on disk) with 8 built-in voices and a real per-chunk `generate_stream` generator.
+Purpose: KittenTTS ONNX sidecar. State-of-the-art tiny CPU TTS model (15M–80M parameters, 25–80 MB on disk) with 8 built-in voices and a real per-text-chunk `generate_stream` generator.
 
-Why in-process instead of a sidecar: KittenTTS is a single-file ONNX runtime, not a server. Running it in-process keeps the dependency isolated, avoids process boundary overhead, and keeps the realtime streaming latency low. ONNX inference is not generally safe to interleave from multiple Python threads, so Universal owns a dedicated worker thread for all synthesis.
+Why a sidecar (not in-process): KittenTTS needs `torch`, `onnxruntime`, `misaki`, and `spacy` to load — heavy incompatible deps that don't belong in the universal-tts core venv. The sidecar runs in its own dedicated `.kitten-venv` so the universal-tts venv stays small. The adapter is a thin HTTP-backed client over the existing `HttpBackedProvider` base, so all the other Universal TTS features (capabilities, voices, batching, streaming headers, model routing) work without any per-provider special-casing.
 
 Runtime:
 
 - Adapter kind: `kitten`
-- No sidecar cwd, command, port, or base URL.
-- Lazy imports `kittentts`; the rest of Universal TTS still boots if the package is missing.
-- Memory estimate: `1` GB (conservative; ONNX runtime is small).
+- Sidecar cwd: `/Users/liam/voice-lab/universal-tts`
+- Sidecar command: `sidecars/kitten_sidecar.sh`
+- Sidecar base URL: `http://127.0.0.1:8782`
+- Sidecar health: `/health`
+- Memory estimate: `1` GB (conservative; ONNX runtime + cached model is small)
 
 Models routed here:
 
@@ -650,11 +662,10 @@ Configured capabilities/options:
 - Streaming mode: `true-decoder-pcm`
 - Streaming implementation: `kitten-generate-stream`
 - PCM stream: 24 kHz, mono, signed 16-bit
-- `default_model: KittenML/kitten-tts-mini-0.8`
+- `default_model: KittenML/kitten-tts-nano-0.8`
 - `default_voice: Bella`
 - `default_speed: 1.0`
-- `default_clean_text: false`
-- `backend: cpu`
+- `default_clean_text: true`
 - Batching API: `true`
 - Native batching: `false`
 - `max_batch_size: 4`
@@ -663,26 +674,53 @@ Configured capabilities/options:
 
 Adapter/request behavior:
 
-- Lazy-imports `kittentts`; surfaces a `ProviderStatus(loaded=False, details={error: ...})` if the package is not installed.
-- Lazy-loads the model on first `/v1/audio/speech`, `/v1/audio/speech-stream`, or `/providers/kitten/load` request and caches it on a single worker thread.
-- Streams raw 24 kHz mono PCM frames as they come off `model.generate_stream(...)` for true realtime audible streaming.
-- Composes a complete WAV file for non-streaming synthesis by concatenating streamed chunks and writing a proper header.
+- HTTP-backed provider; `/providers/kitten/load` starts the sidecar via the configured command and waits for `/health` to return 200.
+- Sidecar `POST /v1/audio/speech` returns a complete WAV file.
+- Sidecar `POST /v1/audio/speech-stream` calls the ONNX model's `generate_stream(...)` and forwards each per-text-chunk audio as raw PCM frames over `Transfer-Encoding: chunked` with proper sample-rate/channels/format headers.
+- Stream path is **true-decoder PCM**, not full-generate-then-chunk: audio arrives over wall-clock time as the model decodes.
 - Exposes the static voice list at `/providers/kitten/voices`.
 - Paralinguistics endpoint returns an empty list (KittenTTS does not expose native paralinguistic tokens).
+- Voice aliases resolve on the client side (adapter) and in the sidecar's `KITTEN_VOICE_ALIASES` env passthrough, so any custom alias map works.
 
 Useful request options:
 
 - `voice` — built-in voice name or alias.
 - `speed` — speech rate multiplier. Defaults to `1.0`.
-- `clean_text` — whether to run the built-in text normalizer (numbers, currency, units, etc.) before synthesis. Defaults to `false`; set to `true` for raw text that should be preprocessed.
+- `clean_text` — whether to run the built-in text normalizer (numbers, currency, units, etc.) before synthesis. Defaults to `true`.
 
-Install:
+Install (KittenTTS venv):
 
 ```bash
-pip install https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl
+cd /Users/liam/voice-lab/universal-tts
+.venv/bin/python -m venv .kitten-venv
+.kitten-venv/bin/pip install -U pip
+# Install from main (the released 0.8.1 wheel ships without generate_stream)
+.kitten-venv/bin/pip install -e /Users/liam/voice-lab/kitten-src/KittenTTS
+# Or from the released wheel (note: 0.8.1 wheel lacks streaming — use main)
+# .kitten-venv/bin/pip install 'https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl'
+.kitten-venv/bin/pip install --no-deps 'fastapi' 'uvicorn' 'starlette' 'sniffio'
 ```
 
-The model itself is downloaded from Hugging Face on first use.
+Run the sidecar:
+
+```bash
+./sidecars/kitten_sidecar.sh
+# or with overrides
+KITTEN_MODEL=KittenML/kitten-tts-mini-0.8 KITTEN_PORT=8782 ./sidecars/kitten_sidecar.sh
+```
+
+The model itself is downloaded from Hugging Face on first use. Cold start to first request is roughly `~1.1s` for nano and slightly longer for mini.
+
+#### Verified end-to-end
+
+Tested against the live `com.liam.universal-tts` LaunchAgent + KittenTTS sidecar with the real `KittenML/kitten-tts-nano-0.8` model:
+
+- `/providers/kitten/load` → `loaded: true, healthy: true`, model load ≈ 1.15s.
+- `/v1/audio/speech` full WAV (9.84s audio) returned in ≈ 0.31s wall-clock.
+- `/v1/audio/speech-stream` returned `Transfer-Encoding: chunked`, `Content-Type: audio/pcm`, `X-Audio-Sample-Rate: 24000`, `X-Audio-Channels: 1`, `X-Audio-Sample-Format: pcm16`, `X-Universal-TTS-Streaming-Implementation: kitten-generate-stream`, `X-Universal-TTS-PCM-Frame-MS: 20`.
+- Long-text streaming test (164s of audio) delivered across ~4.4s of wall-clock pacing — first byte at 148ms, last byte at 4.39s — proving true-decoder streaming rather than burst-then-finish.
+- Voice alias `liam-default → Bella` and lowercase `bruno → Bruno` both resolve correctly.
+- `tts-1` model alias routes to kitten via the model_to_provider map and synthesizes fine.
 
 ## Capabilities response fields
 
