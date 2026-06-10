@@ -66,19 +66,32 @@ def _ensure_loaded() -> Any:
         return _model
 
 
+def _to_int16(samples: np.ndarray) -> np.ndarray:
+    """Convert KittenTTS float32 audio in roughly [-1, 1] to PCM int16.
+
+    KittenTTS returns float32 numpy arrays with peak around 0.5-1.0. Casting
+    those directly to int16 truncates every value to 0 (silence). Scale by
+    32767 with clipping to int16 range.
+    """
+    arr = np.asarray(samples, dtype=np.float32).squeeze()
+    if arr.ndim > 1:
+        arr = arr.reshape(-1)  # flatten (samples, 1) -> (samples,)
+    clipped = np.clip(arr, -1.0, 1.0)
+    return np.round(clipped * 32767.0).astype(np.int16)
+
+
 def _to_pcm_bytes(samples: np.ndarray) -> bytes:
-    arr = np.asarray(samples, dtype=np.int16).squeeze()
-    return arr.tobytes()
+    return _to_int16(samples).tobytes()
 
 
 def _to_wav_bytes(samples: np.ndarray) -> bytes:
-    arr = np.asarray(samples, dtype=np.int16).squeeze()
+    pcm = _to_int16(samples)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(CHANNELS)
         w.setsampwidth(SAMPLE_WIDTH)
         w.setframerate(SAMPLE_RATE)
-        w.writeframes(arr.tobytes())
+        w.writeframes(pcm.tobytes())
     return buf.getvalue()
 
 
