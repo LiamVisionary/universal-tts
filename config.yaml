@@ -190,3 +190,55 @@ providers:
       batch_window_ms: 25
       voices_paths: [/v1/audio/voices, /v1/voices]
       formats: [wav, mp3, opus, flac, aac, pcm]
+  kitten:
+    kind: kitten
+    category: tts
+    estimate_gb: 1
+    models:
+      - KittenML/kitten-tts-mini-0.8
+      - KittenML/kitten-tts-micro-0.8
+      - KittenML/kitten-tts-nano-0.8
+      - kitten-tts-mini
+      - kitten-tts-micro
+      - kitten-tts-nano
+      - tts-1
+    notes: KittenTTS in-process ONNX adapter. True realtime streaming via model.generate_stream; raw 24 kHz mono PCM chunks emitted as they come off the model. Lightweight CPU engine (15-80M params, 25-80 MB on disk). All synthesis runs on a single dedicated worker thread because ONNX inference is not safe to interleave from multiple Python threads.
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: true-decoder-pcm
+      streaming_implementation: kitten-generate-stream
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      default_model: KittenML/kitten-tts-mini-0.8
+      default_voice: Bella
+      default_speed: 1.0
+      default_clean_text: false
+      backend: cpu
+      voice_aliases:
+        liam-default: Bella
+        bruno: Bruno
+        jasper: Jasper
+        luna: Luna
+        rosie: Rosie
+        hugo: Hugo
+        kiki: Kiki
+        leo: Leo
+        bella: Bella
+      voices:
+        - Bella
+        - Jasper
+        - Luna
+        - Bruno
+        - Rosie
+        - Hugo
+        - Kiki
+        - Leo
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 4
+      batch_window_ms: 25
+      formats: [wav, mp3, opus, flac, aac, pcm]

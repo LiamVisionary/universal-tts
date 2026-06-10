@@ -9,6 +9,7 @@ The current repo covers:
 - Chatterbox Turbo via the local MLX sidecar
 - VibeVoice CoreML
 - VibeVoice.cpp
+- KittenTTS (in-process ONNX CPU engine)
 
 Provider sidecars are owned by Universal TTS and should normally not be called directly by clients. Clients should use the Universal TTS endpoints below so request normalization, model routing, memory checks, lifecycle control, audio format conversion, batching, streaming metadata, and provider quirks stay centralized.
 
@@ -56,6 +57,7 @@ Provider adapters:
   - Qwen3Provider
   - MisoProvider
   - ChatterboxTurboProvider
+  - KittenTTSProvider (in-process ONNX CPU engine)
   - generic HttpBackedProvider for VibeVoice CoreML / VibeVoice.cpp and future HTTP providers
   ↓
 Isolated sidecars:
@@ -613,6 +615,75 @@ Adapter/request behavior:
 - Because `stream_path` is not configured, Universal's fallback stream path chunks a full generated audio file as `audio/wav` if streaming is requested.
 - Do not treat this provider as call-ready true streaming unless the sidecar and config are upgraded to expose real incremental decoder audio.
 
+### `kitten`
+
+Purpose: KittenTTS in-process ONNX adapter. State-of-the-art tiny CPU TTS model (15M–80M parameters, 25–80 MB on disk) with 8 built-in voices and a real per-chunk `generate_stream` generator.
+
+Why in-process instead of a sidecar: KittenTTS is a single-file ONNX runtime, not a server. Running it in-process keeps the dependency isolated, avoids process boundary overhead, and keeps the realtime streaming latency low. ONNX inference is not generally safe to interleave from multiple Python threads, so Universal owns a dedicated worker thread for all synthesis.
+
+Runtime:
+
+- Adapter kind: `kitten`
+- No sidecar cwd, command, port, or base URL.
+- Lazy imports `kittentts`; the rest of Universal TTS still boots if the package is missing.
+- Memory estimate: `1` GB (conservative; ONNX runtime is small).
+
+Models routed here:
+
+- `KittenML/kitten-tts-mini-0.8` (80M, highest quality)
+- `KittenML/kitten-tts-micro-0.8` (40M)
+- `KittenML/kitten-tts-nano-0.8` (15M, smallest and fastest)
+- Friendly aliases: `kitten-tts-mini`, `kitten-tts-micro`, `kitten-tts-nano`
+- `tts-1`
+
+Built-in voices:
+
+- `Bella`, `Jasper`, `Luna`, `Bruno`, `Rosie`, `Hugo`, `Kiki`, `Leo`
+- Voice aliases: `liam-default → Bella`, plus lowercase aliases for each built-in voice.
+
+Configured capabilities/options:
+
+- Stream path: `/v1/audio/speech-stream`
+- Stream content type: `audio/pcm`
+- True streaming: `true`
+- Streaming kind: `pcm16`
+- Streaming mode: `true-decoder-pcm`
+- Streaming implementation: `kitten-generate-stream`
+- PCM stream: 24 kHz, mono, signed 16-bit
+- `default_model: KittenML/kitten-tts-mini-0.8`
+- `default_voice: Bella`
+- `default_speed: 1.0`
+- `default_clean_text: false`
+- `backend: cpu`
+- Batching API: `true`
+- Native batching: `false`
+- `max_batch_size: 4`
+- `batch_window_ms: 25`
+- Formats: `wav`, `mp3`, `opus`, `flac`, `aac`, `pcm`
+
+Adapter/request behavior:
+
+- Lazy-imports `kittentts`; surfaces a `ProviderStatus(loaded=False, details={error: ...})` if the package is not installed.
+- Lazy-loads the model on first `/v1/audio/speech`, `/v1/audio/speech-stream`, or `/providers/kitten/load` request and caches it on a single worker thread.
+- Streams raw 24 kHz mono PCM frames as they come off `model.generate_stream(...)` for true realtime audible streaming.
+- Composes a complete WAV file for non-streaming synthesis by concatenating streamed chunks and writing a proper header.
+- Exposes the static voice list at `/providers/kitten/voices`.
+- Paralinguistics endpoint returns an empty list (KittenTTS does not expose native paralinguistic tokens).
+
+Useful request options:
+
+- `voice` — built-in voice name or alias.
+- `speed` — speech rate multiplier. Defaults to `1.0`.
+- `clean_text` — whether to run the built-in text normalizer (numbers, currency, units, etc.) before synthesis. Defaults to `false`; set to `true` for raw text that should be preprocessed.
+
+Install:
+
+```bash
+pip install https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl
+```
+
+The model itself is downloaded from Hugging Face on first use.
+
 ## Capabilities response fields
 
 `GET /v1/audio/capabilities` returns `object: universal_tts.capabilities` and a provider map. Each provider includes:
@@ -647,6 +718,7 @@ Universal normalizes every speech request into `TTSRequest`, but adapters still 
 - Miso needs conservative voice/sampling/duration defaults to avoid clipping and maintain verified cloned-voice behavior.
 - Chatterbox Turbo needs voice aliasing, OpenAI `speed` → `speed_factor`, paralinguistic/token controls, and true-stream quality/commit-stream knobs.
 - VibeVoice CoreML and VibeVoice.cpp use the generic HTTP path but expose different capability truth: CoreML is true PCM streaming, cpp is currently full-generate-then-chunk.
+- KittenTTS runs in-process on a dedicated worker thread and lazy-imports the `kittentts` package. The registry treats it like any other provider for routing, capabilities, voices, batching, and streaming.
 
 Keep common behavior in Universal; keep model-specific runtime logic in adapters/sidecars.
 

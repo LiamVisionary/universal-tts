@@ -8,12 +8,13 @@ from universal_tts.config import RuntimeConfig
 from universal_tts.memory import MemoryGuard, MemorySnapshot, get_memory_snapshot
 from universal_tts.providers.base import ProviderStatus, TTSRequest, TTSProvider
 from universal_tts.providers.http_backed import PROVIDER_FACTORIES
+from universal_tts.providers.kitten import KittenTTSProvider
 
 
 class ProviderRegistry:
     def __init__(self, runtime: RuntimeConfig, provider_factories: dict | None = None, memory_snapshot: Callable[[], MemorySnapshot] = get_memory_snapshot):
         self.runtime = runtime
-        self.provider_factories = {**PROVIDER_FACTORIES, **(provider_factories or {})}
+        self.provider_factories = {**PROVIDER_FACTORIES, "kitten": KittenTTSProvider, **(provider_factories or {})}
         self.memory_snapshot = memory_snapshot
         self.memory_guard = MemoryGuard(runtime.memory.get("reserve_gb", 12))
         self.providers: dict[str, TTSProvider] = {}
