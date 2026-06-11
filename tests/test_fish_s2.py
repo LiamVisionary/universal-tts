@@ -63,13 +63,18 @@ def test_http_provider_accepts_fish_s2_stream_config():
             "stream_path": "/v1/audio/speech-stream",
             "supports_true_streaming": True,
             "streaming_kind": "pcm16",
-            "streaming_mode": "segment-incremental-pcm",
+            "streaming_mode": "prefix-incremental-pcm",
+            "streaming_implementation": "mlx-audio-fish-s2-prefix-code-decode",
             "stream_sample_rate": 44100,
             "stream_channels": 1,
             "stream_sample_format": "pcm16",
+            "stream_frame_ms": 5,
+            "realtime_pacing": False,
         },
     )
     provider = HttpBackedProvider(cfg)
     assert provider.cfg.options["supports_true_streaming"] is True
     assert provider.cfg.options["streaming_kind"] == "pcm16"
+    assert provider.cfg.options["streaming_mode"] == "prefix-incremental-pcm"
+    assert provider.cfg.options["streaming_implementation"] == "mlx-audio-fish-s2-prefix-code-decode"
     assert provider.stream_path() == "/v1/audio/speech-stream"

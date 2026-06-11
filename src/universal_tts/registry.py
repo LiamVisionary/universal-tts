@@ -194,6 +194,10 @@ class ProviderRegistry:
             headers["X-Audio-Sample-Format"] = str(cfg.options["stream_sample_format"])
         if cfg.options.get("streaming_implementation"):
             headers["X-Universal-TTS-Streaming-Implementation"] = str(cfg.options["streaming_implementation"])
+        if cfg.options.get("stream_frame_ms"):
+            headers["X-Universal-TTS-Default-PCM-Frame-MS"] = str(cfg.options["stream_frame_ms"])
+        if "realtime_pacing" in cfg.options:
+            headers["X-Universal-TTS-Default-Realtime-Pacing"] = str(cfg.options["realtime_pacing"]).lower()
         return headers
 
     async def capabilities(self) -> dict:

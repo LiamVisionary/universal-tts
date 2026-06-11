@@ -338,12 +338,23 @@ async def speech_stream(request: Request):
             chunks, content_type, stream_headers = stream_result
         headers = {"X-Universal-TTS-Streaming": "true", **stream_headers}
         if content_type.startswith("audio/pcm"):
-            pacing_value = payload.get("realtime_pacing", True)
+            pacing_value = payload.get(
+                "realtime_pacing",
+                stream_headers.get("X-Universal-TTS-Default-Realtime-Pacing", True),
+            )
             if isinstance(pacing_value, str):
                 realtime_pacing = pacing_value.lower() not in {"0", "false", "no", "off"}
             else:
                 realtime_pacing = bool(pacing_value)
-            frame_ms = int(payload.get("stream_frame_ms", payload.get("frame_ms", 20)))
+            frame_ms = int(
+                payload.get(
+                    "stream_frame_ms",
+                    payload.get(
+                        "frame_ms",
+                        stream_headers.get("X-Universal-TTS-Default-PCM-Frame-MS", 20),
+                    ),
+                )
+            )
             sample_rate = int(stream_headers.get("X-Audio-Sample-Rate", payload.get("sample_rate", 24000)))
             channels = int(stream_headers.get("X-Audio-Channels", 1))
             # Keep Universal de-click opt-in only. The adapter may read upstream

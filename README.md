@@ -734,9 +734,12 @@ Configured capabilities/options:
 - Stream path: `/v1/audio/speech-stream`
 - Stream content type: `audio/pcm`
 - Streaming kind: `pcm16`
-- Streaming mode: `segment-incremental-pcm`
-- Streaming implementation: `mlx-audio-fish-s2-generate-chunks`
+- Streaming mode: `prefix-incremental-pcm`
+- Streaming implementation: `mlx-audio-fish-s2-prefix-code-decode`
 - PCM stream: 44.1 kHz, mono, signed 16-bit
+- Default stream commit size: `1` Fish semantic token, about 46 ms of audio at 44.1 kHz
+- Universal default stream frame: `5` ms
+- Universal default realtime pacing for Fish: `false` to avoid adding TTFA before the first frame; callers can opt back in with `"realtime_pacing": true`
 - `default_chunk_length: 80`
 - `default_max_tokens: 1024`
 - Supports voice cloning: `true`
@@ -745,7 +748,13 @@ Configured capabilities/options:
 
 Streaming truth:
 
-The official Fish S2 Pro SGLang/vLLM Omni server path supports native low-latency streaming on NVIDIA GPUs. The local Apple Silicon path here uses MLX-Audio. The MLX-Audio Fish model currently raises `NotImplementedError` for decoder-frame `stream=True`, but `model.generate(...)` is a generator over text chunks. The sidecar therefore streams each generated audio segment as raw PCM as soon as that segment is produced. This is not full-WAV chunking, but it is also not token/decoder-frame streaming. In live verification on the Mac, the first non-silent PCM arrived after the first generated segment, around several seconds for short prompts.
+The official Fish S2 Pro SGLang/vLLM Omni server path supports native low-latency streaming on NVIDIA GPUs. The local Apple Silicon path here uses MLX-Audio. MLX-Audio Fish still raises `NotImplementedError` for its public decoder-frame `stream=True` flag, so the sidecar uses a lower-level prefix-code streaming path: it samples semantic/codebook tokens incrementally, periodically decodes the generated code prefix, and emits only the new PCM delta. This is not full-WAV chunking and no longer waits for a whole generated text segment. It is still not an official Fish decoder-frame callback, so keep the mode labeled `prefix-incremental-pcm` rather than claiming upstream-native SGLang/vLLM streaming.
+
+Warm latency verification on this Mac through Universal TTS with `model: fish-s2`, `response_format: pcm`, no special request overrides:
+
+- First cold-ish request after restart: around 175–235 ms while MLX kernels settle.
+- Warm first byte / first non-silent PCM: typically 82–91 ms for the short `Yes.` benchmark.
+- Response headers expose `X-Universal-TTS-Streaming-Implementation: mlx-audio-fish-s2-prefix-code-decode`, `X-Universal-TTS-PCM-Frame-MS: 5`, and `X-Universal-TTS-Realtime-Pacing: false`.
 
 Useful requests:
 

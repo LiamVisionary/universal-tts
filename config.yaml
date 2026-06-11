@@ -357,18 +357,21 @@ providers:
       - fish-s2-pro
       - fishaudio/s2-pro
       - mlx-community/fish-audio-s2-pro-8bit
-    notes: "Fish Audio S2 Pro via MLX-Audio 8-bit conversion. Fish Audio Research License: research/non-commercial use only; commercial use requires a separate Fish Audio license. Supports zero-shot voice cloning with ref_audio + ref_text. Official SGLang/vLLM path supports native low-latency streaming on NVIDIA GPUs; mlx-audio on Apple Silicon currently raises NotImplementedError for decoder-frame stream=True, so this sidecar streams generated text chunks segment-incrementally as raw 44.1 kHz PCM16."
+    notes: "Fish Audio S2 Pro via MLX-Audio 8-bit conversion. Fish Audio Research License: research/non-commercial use only; commercial use requires a separate Fish Audio license. Supports zero-shot voice cloning with ref_audio + ref_text. Official SGLang/vLLM path supports native low-latency streaming on NVIDIA GPUs; mlx-audio on Apple Silicon raises NotImplementedError for its public decoder-frame stream=True path, so this sidecar uses a private prefix-code streaming path that samples semantic/codebook tokens incrementally, decodes short prefixes, and emits raw 44.1 kHz PCM16 deltas. Warm Universal TTFA benchmarks are under 100 ms with 1-token commits."
     options:
       stream_path: /v1/audio/speech-stream
       stream_content_type: audio/pcm
       supports_true_streaming: true
       streaming_kind: pcm16
-      streaming_mode: segment-incremental-pcm
-      streaming_implementation: mlx-audio-fish-s2-generate-chunks
+      streaming_mode: prefix-incremental-pcm
+      streaming_implementation: mlx-audio-fish-s2-prefix-code-decode
       stream_sample_rate: 44100
       stream_channels: 1
       stream_sample_format: pcm16
-      stream_read_bytes: 1764
+      stream_read_bytes: 512
+      stream_frame_ms: 5
+      realtime_pacing: false
+      default_stream_commit_tokens: 1
       default_model: mlx-community/fish-audio-s2-pro-8bit
       default_voice: default
       default_lang: en
