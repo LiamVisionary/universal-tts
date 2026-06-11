@@ -218,7 +218,7 @@ providers:
       stream_sample_rate: 24000
       stream_channels: 1
       stream_sample_format: pcm16
-      default_model: KittenML/kitten-tts-nano-0.8
+      default_model: KittenML/kitten-tts-mini-0.8
       default_voice: Bella
       default_speed: 1.0
       default_clean_text: true

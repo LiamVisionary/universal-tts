@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 VENV="${KITTEN_VENV:-${REPO_ROOT}/.kitten-venv}"
-MODEL="${KITTEN_MODEL:-KittenML/kitten-tts-nano-0.8}"
+MODEL="${KITTEN_MODEL:-KittenML/kitten-tts-mini-0.8}"
 HOST="${KITTEN_HOST:-127.0.0.1}"
 PORT="${KITTEN_PORT:-8782}"
 

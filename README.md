@@ -662,7 +662,7 @@ Configured capabilities/options:
 - Streaming mode: `true-decoder-pcm`
 - Streaming implementation: `kitten-generate-stream`
 - PCM stream: 24 kHz, mono, signed 16-bit
-- `default_model: KittenML/kitten-tts-nano-0.8`
+- `default_model: KittenML/kitten-tts-mini-0.8`
 - `default_voice: Bella`
 - `default_speed: 1.0`
 - `default_clean_text: true`

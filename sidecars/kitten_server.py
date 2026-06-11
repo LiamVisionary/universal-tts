@@ -34,7 +34,7 @@ CHANNELS = 1
 SAMPLE_WIDTH = 2
 AVAILABLE_VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"]
 DEFAULT_VOICE = "Bella"
-DEFAULT_MODEL = os.environ.get("KITTEN_MODEL", "KittenML/kitten-tts-nano-0.8")
+DEFAULT_MODEL = os.environ.get("KITTEN_MODEL", "KittenML/kitten-tts-mini-0.8")
 
 app = FastAPI(title="Universal TTS — KittenTTS sidecar", version="0.1.0")
 
