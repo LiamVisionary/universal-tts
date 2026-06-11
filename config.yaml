@@ -246,3 +246,100 @@ providers:
       max_batch_size: 4
       batch_window_ms: 25
       formats: [wav, mp3, opus, flac, aac, pcm]
+  kokoro:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: /Users/liam/voice-lab/universal-tts/sidecars/kokoro_sidecar.sh
+    base_url: http://127.0.0.1:8783
+    health_path: /health
+    port: 8783
+    estimate_gb: 3
+    models:
+      - hexgrad/Kokoro-82M
+      - kokoro
+      - kokoro-82m
+      - kokoro-v1_0
+    notes: "Kokoro-82M sidecar (Apache-licensed 82M open-weight TTS). Full Hugging Face snapshot is pre-downloaded, including kokoro-v1_0.pth and all 54 voice tensors. Streaming is raw 24 kHz PCM16 emitted segment-by-segment from KPipeline; Kokoro has no public decoder-frame callback, so the sidecar force-splits text into short phrase/sentence units and streams each generated audio segment before later segments are synthesized."
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: segment-incremental-pcm
+      streaming_implementation: kokoro-kpipeline-segment-generator
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      stream_read_bytes: 960
+      default_model: hexgrad/Kokoro-82M
+      default_voice: af_heart
+      default_speed: 1.0
+      max_segment_chars: 220
+      voices:
+        - af_alloy
+        - af_aoede
+        - af_bella
+        - af_heart
+        - af_jessica
+        - af_kore
+        - af_nicole
+        - af_nova
+        - af_river
+        - af_sarah
+        - af_sky
+        - am_adam
+        - am_echo
+        - am_eric
+        - am_fenrir
+        - am_liam
+        - am_michael
+        - am_onyx
+        - am_puck
+        - am_santa
+        - bf_alice
+        - bf_emma
+        - bf_isabella
+        - bf_lily
+        - bm_daniel
+        - bm_fable
+        - bm_george
+        - bm_lewis
+        - ef_dora
+        - em_alex
+        - em_santa
+        - ff_siwis
+        - hf_alpha
+        - hf_beta
+        - hm_omega
+        - hm_psi
+        - if_sara
+        - im_nicola
+        - jf_alpha
+        - jf_gongitsune
+        - jf_nezumi
+        - jf_tebukuro
+        - jm_kumo
+        - pf_dora
+        - pm_alex
+        - pm_santa
+        - zf_xiaobei
+        - zf_xiaoni
+        - zf_xiaoxiao
+        - zf_xiaoyi
+        - zm_yunjian
+        - zm_yunxi
+        - zm_yunxia
+        - zm_yunyang
+      voice_aliases:
+        liam-default: af_heart
+        heart: af_heart
+        bella: af_bella
+        nicole: af_nicole
+        emma: bf_emma
+        liam: am_liam
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 4
+      batch_window_ms: 25
+      formats: [wav, mp3, opus, flac, aac, pcm]

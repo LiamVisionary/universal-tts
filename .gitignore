@@ -11,6 +11,7 @@ htmlcov/
 # Virtual environments
 .venv/
 .kitten-venv/
+.kokoro-venv/
 venv/
 env/
 

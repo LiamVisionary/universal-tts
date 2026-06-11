@@ -10,6 +10,7 @@ The current repo covers:
 - VibeVoice CoreML
 - VibeVoice.cpp
 - KittenTTS (dedicated ONNX sidecar on `.kitten-venv`)
+- Kokoro-82M (dedicated Torch/Misaki sidecar on `.kokoro-venv`)
 
 Provider sidecars are owned by Universal TTS and should normally not be called directly by clients. Clients should use the Universal TTS endpoints below so request normalization, model routing, memory checks, lifecycle control, audio format conversion, batching, streaming metadata, and provider quirks stay centralized.
 
@@ -21,6 +22,7 @@ Provider sidecars are owned by Universal TTS and should normally not be called d
 - `vibevoice-coreml` — CoreML resident, port `8781`
 - `vibevoice-cpp` — ggml/Metal, port `8780`
 - `kitten` — ONNX sidecar, port `8782`, dedicated `.kitten-venv`
+- `kokoro` — Kokoro-82M sidecar, port `8783`, dedicated `.kokoro-venv`, 54 voices
 
 ## Service address
 
@@ -66,8 +68,8 @@ Provider adapters:
   - Qwen3Provider
   - MisoProvider
   - ChatterboxTurboProvider
-  - KittenTTSProvider (in-process ONNX CPU engine)
-  - generic HttpBackedProvider for VibeVoice CoreML / VibeVoice.cpp and future HTTP providers
+  - KittenTTSProvider (HTTP-backed ONNX sidecar client)
+  - generic HttpBackedProvider for Kokoro / VibeVoice CoreML / VibeVoice.cpp and future HTTP providers
   ↓
 Isolated sidecars:
   - qwen3 MLX service on :8766
@@ -76,6 +78,7 @@ Isolated sidecars:
   - VibeVoice CoreML service on :8781
   - VibeVoice.cpp service on :8780
   - KittenTTS ONNX service on :8782 (dedicated `.kitten-venv`)
+  - Kokoro-82M Torch/Misaki service on :8783 (dedicated `.kokoro-venv`)
 ```
 
 Common code lives in `src/universal_tts/`:
@@ -624,6 +627,73 @@ Adapter/request behavior:
 - Uses the generic HTTP-backed provider.
 - Because `stream_path` is not configured, Universal's fallback stream path chunks a full generated audio file as `audio/wav` if streaming is requested.
 - Do not treat this provider as call-ready true streaming unless the sidecar and config are upgraded to expose real incremental decoder audio.
+
+### `kokoro`
+
+Purpose: Kokoro-82M sidecar. Kokoro is an Apache-licensed open-weight 82M parameter TTS model. The full Hugging Face snapshot is pre-downloaded on this machine: `kokoro-v1_0.pth`, `config.json`, docs/sample metadata, and all 54 `voices/*.pt` voice tensors. Japanese and Chinese G2P extras (`misaki[ja,zh]`) are installed in the sidecar venv so non-English voice files are usable rather than merely present on disk.
+
+Why a sidecar (not in-process): Kokoro pulls in Torch, Transformers, Misaki, spaCy, espeak, Japanese/Chinese G2P extras, and language-specific tokenizers. Those dependencies belong in a dedicated `.kokoro-venv`, not the universal-tts core venv.
+
+Runtime:
+
+- Adapter kind: `http`
+- Sidecar cwd: `/Users/liam/voice-lab/universal-tts`
+- Sidecar command: `sidecars/kokoro_sidecar.sh`
+- Sidecar venv: `.kokoro-venv`
+- Sidecar base URL: `http://127.0.0.1:8783`
+- Sidecar health: `/health`
+- Memory estimate: `3` GB
+- Default model: `hexgrad/Kokoro-82M`
+- Default voice: `af_heart`
+
+Models routed here:
+
+- `hexgrad/Kokoro-82M`
+- `kokoro`
+- `kokoro-82m`
+- `kokoro-v1_0`
+
+Voices:
+
+- American English (`lang_code=a`): `af_alloy`, `af_aoede`, `af_bella`, `af_heart`, `af_jessica`, `af_kore`, `af_nicole`, `af_nova`, `af_river`, `af_sarah`, `af_sky`, `am_adam`, `am_echo`, `am_eric`, `am_fenrir`, `am_liam`, `am_michael`, `am_onyx`, `am_puck`, `am_santa`
+- British English (`lang_code=b`): `bf_alice`, `bf_emma`, `bf_isabella`, `bf_lily`, `bm_daniel`, `bm_fable`, `bm_george`, `bm_lewis`
+- Spanish (`lang_code=e`): `ef_dora`, `em_alex`, `em_santa`
+- French (`lang_code=f`): `ff_siwis`
+- Hindi (`lang_code=h`): `hf_alpha`, `hf_beta`, `hm_omega`, `hm_psi`
+- Italian (`lang_code=i`): `if_sara`, `im_nicola`
+- Japanese (`lang_code=j`): `jf_alpha`, `jf_gongitsune`, `jf_nezumi`, `jf_tebukuro`, `jm_kumo`
+- Brazilian Portuguese (`lang_code=p`): `pf_dora`, `pm_alex`, `pm_santa`
+- Mandarin Chinese (`lang_code=z`): `zf_xiaobei`, `zf_xiaoni`, `zf_xiaoxiao`, `zf_xiaoyi`, `zm_yunjian`, `zm_yunxi`, `zm_yunxia`, `zm_yunyang`
+
+Configured capabilities/options:
+
+- Stream path: `/v1/audio/speech-stream`
+- Stream content type: `audio/pcm`
+- Streaming kind: `pcm16`
+- Streaming mode: `segment-incremental-pcm`
+- Streaming implementation: `kokoro-kpipeline-segment-generator`
+- PCM stream: 24 kHz, mono, signed 16-bit
+- `max_segment_chars: 220` by default; callers can override `max_segment_chars` for finer streaming granularity.
+- Voice aliases: `liam-default → af_heart`, `heart → af_heart`, `bella → af_bella`, `nicole → af_nicole`, `emma → bf_emma`, `liam → am_liam`
+- Formats: `wav`, `mp3`, `opus`, `flac`, `aac`, `pcm`
+
+Streaming truth:
+
+Kokoro's public Python API does **not** expose decoder-frame callbacks. It exposes a `KPipeline(...)` generator that yields a completed audio tensor per text segment. The sidecar therefore implements real incremental streaming at the segment/phrase level: it force-splits input into short sentence/phrase units, starts synthesizing the first unit immediately, and emits raw PCM for each unit before later units are synthesized. This is not full-generate-then-chunk, but it is also not lower-level decoder-token streaming. The sidecar and capability metadata name this explicitly as `segment-incremental-pcm`.
+
+Useful requests:
+
+```bash
+curl -X POST http://127.0.0.1:8799/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"kokoro","voice":"af_heart","input":"Hello from Kokoro.","response_format":"wav"}' \
+  -o kokoro.wav
+
+curl -N -X POST http://127.0.0.1:8799/v1/audio/speech-stream \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"kokoro","voice":"af_heart","input":"Sentence one. Sentence two. Sentence three.","response_format":"pcm","max_segment_chars":80}' \
+  -o kokoro.pcm
+```
 
 ### `kitten`
 
