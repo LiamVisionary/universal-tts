@@ -343,3 +343,50 @@ providers:
       max_batch_size: 4
       batch_window_ms: 25
       formats: [wav, mp3, opus, flac, aac, pcm]
+  fish-s2:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: /Users/liam/voice-lab/universal-tts/sidecars/fish_s2_sidecar.sh
+    base_url: http://127.0.0.1:8784
+    health_path: /health
+    port: 8784
+    estimate_gb: 12
+    models:
+      - fish-s2
+      - fish-s2-pro
+      - fishaudio/s2-pro
+      - mlx-community/fish-audio-s2-pro-8bit
+    notes: "Fish Audio S2 Pro via MLX-Audio 8-bit conversion. Fish Audio Research License: research/non-commercial use only; commercial use requires a separate Fish Audio license. Supports zero-shot voice cloning with ref_audio + ref_text. Official SGLang/vLLM path supports native low-latency streaming on NVIDIA GPUs; mlx-audio on Apple Silicon currently raises NotImplementedError for decoder-frame stream=True, so this sidecar streams generated text chunks segment-incrementally as raw 44.1 kHz PCM16."
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: segment-incremental-pcm
+      streaming_implementation: mlx-audio-fish-s2-generate-chunks
+      stream_sample_rate: 44100
+      stream_channels: 1
+      stream_sample_format: pcm16
+      stream_read_bytes: 1764
+      default_model: mlx-community/fish-audio-s2-pro-8bit
+      default_voice: default
+      default_lang: en
+      default_max_tokens: 1024
+      default_chunk_length: 80
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio, ref_text]
+      license_name: Fish Audio Research License
+      license_summary: research and non-commercial use allowed; commercial use requires separate license from Fish Audio
+      voices:
+        - default
+        - clone
+      voice_aliases:
+        liam-default: clone
+        clone: clone
+        default: default
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 2
+      batch_window_ms: 25
+      formats: [wav, mp3, opus, flac, aac, pcm]

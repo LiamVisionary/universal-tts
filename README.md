@@ -11,6 +11,7 @@ The current repo covers:
 - VibeVoice.cpp
 - KittenTTS (dedicated ONNX sidecar on `.kitten-venv`)
 - Kokoro-82M (dedicated Torch/Misaki sidecar on `.kokoro-venv`)
+- Fish Audio S2 Pro 8-bit MLX (dedicated MLX-Audio sidecar on `.fish-s2-venv`; Fish Audio Research License)
 
 Provider sidecars are owned by Universal TTS and should normally not be called directly by clients. Clients should use the Universal TTS endpoints below so request normalization, model routing, memory checks, lifecycle control, audio format conversion, batching, streaming metadata, and provider quirks stay centralized.
 
@@ -23,6 +24,7 @@ Provider sidecars are owned by Universal TTS and should normally not be called d
 - `vibevoice-cpp` — ggml/Metal, port `8780`
 - `kitten` — ONNX sidecar, port `8782`, dedicated `.kitten-venv`
 - `kokoro` — Kokoro-82M sidecar, port `8783`, dedicated `.kokoro-venv`, 54 voices
+- `fish-s2` — Fish Audio S2 Pro 8-bit MLX sidecar, port `8784`, dedicated `.fish-s2-venv`, zero-shot voice cloning with `ref_audio` + `ref_text`
 
 ## Service address
 
@@ -69,7 +71,7 @@ Provider adapters:
   - MisoProvider
   - ChatterboxTurboProvider
   - KittenTTSProvider (HTTP-backed ONNX sidecar client)
-  - generic HttpBackedProvider for Kokoro / VibeVoice CoreML / VibeVoice.cpp and future HTTP providers
+  - generic HttpBackedProvider for Kokoro / Fish S2 / VibeVoice CoreML / VibeVoice.cpp and future HTTP providers
   ↓
 Isolated sidecars:
   - qwen3 MLX service on :8766
@@ -79,6 +81,7 @@ Isolated sidecars:
   - VibeVoice.cpp service on :8780
   - KittenTTS ONNX service on :8782 (dedicated `.kitten-venv`)
   - Kokoro-82M Torch/Misaki service on :8783 (dedicated `.kokoro-venv`)
+  - Fish Audio S2 Pro MLX service on :8784 (dedicated `.fish-s2-venv`)
 ```
 
 Common code lives in `src/universal_tts/`:
@@ -693,6 +696,74 @@ curl -N -X POST http://127.0.0.1:8799/v1/audio/speech-stream \
   -H 'Content-Type: application/json' \
   -d '{"model":"kokoro","voice":"af_heart","input":"Sentence one. Sentence two. Sentence three.","response_format":"pcm","max_segment_chars":80}' \
   -o kokoro.pcm
+```
+
+### `fish-s2`
+
+Purpose: Fish Audio S2 Pro via the MLX-Audio 8-bit Apple Silicon conversion. This is a heavier, higher-quality multilingual voice-cloning TTS provider than Kokoro/Kitten. It is **not** permissively licensed: Fish S2 Pro is under the Fish Audio Research License, which permits research/non-commercial use and requires a separate Fish Audio commercial license for commercial use.
+
+Why a sidecar (not in-process): Fish S2 Pro uses MLX/MLX-Audio and a large converted checkpoint. MLX streams are thread-local, so the sidecar owns a dedicated MLX worker thread that loads the model and runs all generation/reference-audio preprocessing on that same thread.
+
+Runtime:
+
+- Adapter kind: `http`
+- Sidecar cwd: `/Users/liam/voice-lab/universal-tts`
+- Sidecar command: `sidecars/fish_s2_sidecar.sh`
+- Sidecar venv: `.fish-s2-venv`
+- Sidecar base URL: `http://127.0.0.1:8784`
+- Sidecar health: `/health`
+- Memory estimate: `12` GB
+- Default model: `mlx-community/fish-audio-s2-pro-8bit`
+- Sample rate: 44.1 kHz mono PCM16
+
+Models routed here:
+
+- `fish-s2`
+- `fish-s2-pro`
+- `fishaudio/s2-pro`
+- `mlx-community/fish-audio-s2-pro-8bit`
+
+Voice / cloning behavior:
+
+- `voice: default` — base/no-reference generation.
+- `voice: clone` or alias `liam-default` — use zero-shot cloning when `ref_audio` and `ref_text` are supplied.
+- Voice cloning requires both `ref_audio` and `ref_text`; the sidecar validates the reference WAV path and loads it at the model sample rate before generation.
+
+Configured capabilities/options:
+
+- Stream path: `/v1/audio/speech-stream`
+- Stream content type: `audio/pcm`
+- Streaming kind: `pcm16`
+- Streaming mode: `segment-incremental-pcm`
+- Streaming implementation: `mlx-audio-fish-s2-generate-chunks`
+- PCM stream: 44.1 kHz, mono, signed 16-bit
+- `default_chunk_length: 80`
+- `default_max_tokens: 1024`
+- Supports voice cloning: `true`
+- Voice cloning requires: `ref_audio`, `ref_text`
+- Formats: `wav`, `mp3`, `opus`, `flac`, `aac`, `pcm`
+
+Streaming truth:
+
+The official Fish S2 Pro SGLang/vLLM Omni server path supports native low-latency streaming on NVIDIA GPUs. The local Apple Silicon path here uses MLX-Audio. The MLX-Audio Fish model currently raises `NotImplementedError` for decoder-frame `stream=True`, but `model.generate(...)` is a generator over text chunks. The sidecar therefore streams each generated audio segment as raw PCM as soon as that segment is produced. This is not full-WAV chunking, but it is also not token/decoder-frame streaming. In live verification on the Mac, the first non-silent PCM arrived after the first generated segment, around several seconds for short prompts.
+
+Useful requests:
+
+```bash
+curl -X POST http://127.0.0.1:8799/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"fish-s2","input":"Hello from Fish S2 Pro.","response_format":"wav","max_tokens":350,"chunk_length":80}' \
+  -o fish-s2.wav
+
+curl -X POST http://127.0.0.1:8799/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"fish-s2","voice":"clone","input":"This uses a reference voice.","ref_audio":"/path/to/reference.wav","ref_text":"Exact transcript of the reference clip.","response_format":"wav"}' \
+  -o fish-s2-clone.wav
+
+curl -N -X POST http://127.0.0.1:8799/v1/audio/speech-stream \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"fish-s2","input":"Sentence one. Sentence two.","response_format":"pcm","chunk_length":45}' \
+  -o fish-s2.pcm
 ```
 
 ### `kitten`
