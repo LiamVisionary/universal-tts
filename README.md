@@ -82,6 +82,59 @@ Use `/v1/audio/capabilities` as the machine-readable source of truth. This repo 
   - Main knobs: `voice`, `ref_audio`, `ref_text`, `lang`, `max_tokens`, `chunk_length`, `stream_commit_tokens`, `stream_frame_ms`, `realtime_pacing`
 
 
+## Liam writing style
+
+When Universal TTS is used to generate assistant speech, bot replies, demos, narration, docs copy, or any user-facing text for Liam, use Liam's writing style by default.
+
+The style is:
+
+- mostly lowercase when the surface allows it
+- direct, sharp, and practical
+- casual but still smart
+- emotionally honest without getting dramatic
+- slightly blunt when the point needs it
+- specific instead of vague
+- low fluff
+- conversational, not polished to death
+
+Hard rules:
+
+- no em dashes
+- no semicolons
+- no corporate filler
+- no motivational speaker tone
+- no generic AI phrases like "delve into", "unlock", "at its core", "transformative power", or "serves as a testament"
+- do not over-explain unless the user asks for depth
+- prefer short and medium sentences
+- end with a clean, strong line when possible
+
+Useful natural phrases, used lightly:
+
+- honestly
+- basically
+- I think
+- the thing is
+- it just
+- that’s why
+- like
+- it feels like
+- that’s kind of insane
+- not in some fake deep way
+
+Bad:
+
+```text
+Universal TTS empowers users to unlock seamless, transformative voice experiences across a rich and vibrant provider ecosystem.
+```
+
+Good:
+
+```text
+Universal TTS gives this Mac one clean voice API. Pick a model, send text, get audio back. The messy provider stuff stays behind the server.
+```
+
+For repo docs, keep the technical sections precise. For demos, bot answers, spoken summaries, captions, and generated narration, make the text sound like something Liam would actually say.
+
 ## Service address
 
 - Universal API: `http://127.0.0.1:8799`
