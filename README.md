@@ -126,6 +126,51 @@ Common request fields accepted by Universal:
 
 Everything else in the JSON payload is preserved in `TTSRequest.options` and passed through to the provider adapter unless the adapter intentionally rewrites it. That is how model-specific knobs such as `instruct`, `language`, `temperature`, `cfg_weight`, `smooth_join_ms`, and `stream_frame_ms` reach the correct sidecar.
 
+## Saved voice-clone library
+
+Universal TTS has a persistent voice library for providers that support reference-audio cloning. A saved voice profile copies the reference audio into `data/voice_library/<provider>/<voice_id>.*`, stores the transcript in JSON, appears in `/providers/{provider}/voices`, and can be used later by passing only `voice: "<voice_id>"`.
+
+Supported clone-library providers:
+
+- `fish-s2` — stores `ref_audio` + `ref_text`; future requests are rewritten to Fish clone mode with those fields.
+- `qwen3` — stores `ref_audio` + `ref_text`; future requests pass those fields to the Qwen MLX sidecar for ICL/reference cloning.
+- `miso` — stores `ref_audio` + `ref_text`; future requests pass `reference_audio_path` + `reference_transcript` to Miso.
+- `chatterbox-turbo` — stores `ref_audio`; future requests use Chatterbox clone mode with the saved reference path.
+
+Create/register a saved clone voice:
+
+```bash
+curl -X POST http://127.0.0.1:8799/providers/fish-s2/voices \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "voice_id": "voice01",
+    "name": "Voice 01",
+    "ref_audio": "/Users/liam/voice-lab/Chatterbox-TTS-Server/voices/voice1-all-samples-10s.wav",
+    "ref_text": "They let me pick. Did I ever tell you that? Choose whichever Spartan I wanted. You know me. I did my research. Watched as you became the soldier we needed you to be.",
+    "overwrite": true
+  }'
+```
+
+The response is immediate and explicit:
+
+```json
+{
+  "ok": true,
+  "status": "ready",
+  "added_to_voice_library": true,
+  "voices_endpoint": "/providers/fish-s2/voices"
+}
+```
+
+Use a saved cloned voice without resending the reference:
+
+```bash
+curl -N -X POST http://127.0.0.1:8799/v1/audio/speech-stream \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"fish-s2","voice":"voice01","input":"This uses the saved voice clone.","response_format":"pcm"}' \
+  -o voice01.pcm
+```
+
 Minimal non-streaming example:
 
 ```bash

@@ -32,6 +32,8 @@ providers:
       stream_channels: 1
       stream_sample_format: pcm16
       default_max_new_tokens: 512
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio, ref_text]
       supports_batching: true
       supports_native_batching: true
       max_batch_size: 4
@@ -65,6 +67,8 @@ providers:
       default_topk: 20
       default_chunk_frames: 1
       default_seed: 1003
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio, ref_text]
       voice_aliases:
         liam-default: voice1-all-samples
       supports_batching: true
@@ -97,6 +101,8 @@ providers:
       stream_sample_format: pcm16
       default_stream_chunk_size: 6
       stream_read_bytes: 240
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio]
       voices:
         - voice01
         - voice1-all-samples-10s.wav

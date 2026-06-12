@@ -18,6 +18,7 @@ env/
 
 # Local/runtime artifacts
 logs/
+data/voice_library/
 *.log
 *.pid
 *.sock

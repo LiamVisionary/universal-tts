@@ -241,6 +241,30 @@ async def default_voices():
     return RedirectResponse(url=f"/providers/{provider_id}/voices", status_code=307)
 
 
+@app.post("/v1/voices")
+async def create_voice(request: Request):
+    try:
+        payload = await request.json()
+        return registry.create_voice(payload)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/providers/{provider_id}/voices")
+@app.post("/runtimes/{provider_id}/voices")
+@app.post("/v1/audio/{provider_id}/voices")
+async def create_provider_voice(provider_id: str, request: Request):
+    try:
+        payload = await request.json()
+        return registry.create_voice(payload, provider_id=provider_id)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/v1/audio/batches")
 async def audio_batch(request: Request):
     try:
