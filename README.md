@@ -26,6 +26,60 @@ Provider sidecars are owned by Universal TTS and should normally not be called d
 - `kokoro` — Kokoro-82M sidecar, port `8783`, dedicated `.kokoro-venv`, 54 voices
 - `fish-s2` — Fish Audio S2 Pro 8-bit MLX sidecar, port `8784`, dedicated `.fish-s2-venv`, zero-shot voice cloning with `ref_audio` + `ref_text`
 
+### Feature and provider matrix
+
+Use `/v1/audio/capabilities` as the machine-readable source of truth. This repo also documents the current installed defaults here for human operators.
+
+- `qwen3`
+  - Models: `qwen3-tts-1.7b-custom`, `qwen3-tts-1.7b-design`, `qwen3-tts-1.7b-base-clone`, `qwen3-tts-0.6b-custom`, `qwen3-tts-0.6b-base-clone`, `tts-1`
+  - Streaming: true raw PCM, 24 kHz mono PCM16, `mlx-audio-streaming-step`
+  - Voice cloning: yes, saved voice library supports `ref_audio` + `ref_text`
+  - Batching: native provider batching via `/v1/audio/batches`, max batch size `4`
+  - Main knobs: `voice`, `instruct`, `language`, `max_new_tokens`, `seed`, `clone_mode`, plus Universal `response_format`, `speed`, stream frame/pacing controls
+- `miso`
+  - Models: `miso-tts-8b`
+  - Streaming: true experimental decoder PCM, 24 kHz mono PCM16, `true-decoder-pcm-experimental`
+  - Voice cloning: yes, saved voice library supports `ref_audio` + `ref_text`
+  - Batching: Universal microbatch/sequential fallback, max batch size `4`
+  - Main knobs: `voice`, `temperature`, `topk`, `chunk_frames`, `seed`, `asr_verify`, `auto_duration`, `tail_silence_ms`, `max_audio_length_ms`
+- `chatterbox-turbo`
+  - Models: `chatterbox-turbo`, `ResembleAI/chatterbox-turbo`
+  - Streaming: true raw PCM, 24 kHz mono PCM16, `mlx-audio-stream-generate`
+  - Voice cloning: yes, saved voice library supports `ref_audio`; use `voice_mode: clone` for direct reference filename mode
+  - Batching: Universal microbatch/sequential fallback, max batch size `4`
+  - Main knobs: `voice`, `voice_mode`, `speed`/`speed_factor`, `temperature`, `exaggeration`, `cfg_weight`, `seed`, `language`, `top_p`, `top_k`/`topk`, `repetition_penalty`, `max_tokens`, `stream_chunk_size`/`chunk_size`, `smooth_join_ms`, `lowpass_hz`, true-stream quality/commit options, delivery-mode options
+- `vibevoice-coreml`
+  - Models: `vibevoice`, `vibevoice-coreml-0.5b`, `vibevoice-realtime-0.5b`, `vibevoice-realtime-0.5B`
+  - Streaming: true resident CoreML decoder PCM, 24 kHz mono PCM16
+  - Voice cloning: no saved clone library in Universal currently; provider-scoped preset voices are discovered from the sidecar
+  - Batching: Universal microbatch/sequential fallback, max batch size `4`
+  - Main knobs: `voice`, `language`, and VibeVoice-sidecar options such as `cfg_scale`, `eos_tail_frames`, `tail_silence_ms` when supported
+- `vibevoice-cpp`
+  - Models: `vibevoice-cpp`
+  - Streaming: compatibility fallback only, full-generate-then-chunk
+  - Voice cloning: no saved clone library in Universal currently; voices come from GGUF/preset discovery
+  - Batching: Universal microbatch/sequential fallback, max batch size `4`
+  - Main knobs: `voice` and other VibeVoice.cpp sidecar passthrough fields when supported
+- `kitten`
+  - Models: `KittenML/kitten-tts-mini-0.8`, `KittenML/kitten-tts-micro-0.8`, `KittenML/kitten-tts-nano-0.8`, `kitten-tts-mini`, `kitten-tts-micro`, `kitten-tts-nano`, `tts-1`
+  - Streaming: true ONNX `generate_stream` PCM, 24 kHz mono PCM16
+  - Voice cloning: no; uses 8 built-in voices
+  - Batching: Universal microbatch/sequential fallback, max batch size `4`
+  - Main knobs: `voice`, `speed`, `clean_text`
+- `kokoro`
+  - Models: `hexgrad/Kokoro-82M`, `kokoro`, `kokoro-82m`, `kokoro-v1_0`
+  - Streaming: segment-incremental PCM from `KPipeline`, 24 kHz mono PCM16; not decoder-frame callbacks
+  - Voice cloning: no; uses 54 built-in voice tensors
+  - Batching: Universal microbatch/sequential fallback, max batch size `4`
+  - Main knobs: `voice`, `speed`, `lang_code`, `max_segment_chars`
+- `fish-s2`
+  - Models: `fish-s2`, `fish-s2-pro`, `fishaudio/s2-pro`, `mlx-community/fish-audio-s2-pro-8bit`
+  - Streaming: prefix-incremental PCM, 44.1 kHz mono PCM16, `mlx-audio-fish-s2-prefix-code-decode`; warm TTFA verified below 100 ms for short text on this Mac
+  - Voice cloning: yes, saved voice library supports `ref_audio` + `ref_text`; direct request-time mode also accepts `voice: clone` with those fields
+  - Batching: Universal microbatch/sequential fallback, max batch size `2`
+  - Main knobs: `voice`, `ref_audio`, `ref_text`, `lang`, `max_tokens`, `chunk_length`, `stream_commit_tokens`, `stream_frame_ms`, `realtime_pacing`
+
+
 ## Service address
 
 - Universal API: `http://127.0.0.1:8799`
@@ -137,7 +191,7 @@ Supported clone-library providers:
 - `miso` — stores `ref_audio` + `ref_text`; future requests pass `reference_audio_path` + `reference_transcript` to Miso.
 - `chatterbox-turbo` — stores `ref_audio`; future requests use Chatterbox clone mode with the saved reference path.
 
-Create/register a saved clone voice:
+Create/register a saved clone voice with either the global endpoint (`POST /v1/voices`, requires `provider` or `model`) or a provider-scoped endpoint (`POST /providers/{provider}/voices`, `POST /runtimes/{provider}/voices`, or `POST /v1/audio/{provider}/voices`):
 
 ```bash
 curl -X POST http://127.0.0.1:8799/providers/fish-s2/voices \
@@ -150,6 +204,8 @@ curl -X POST http://127.0.0.1:8799/providers/fish-s2/voices \
     "overwrite": true
   }'
 ```
+
+Accepted registration field aliases: `voice_id`/`id`/`name`, `ref_audio`/`reference_audio`/`reference_audio_path`/`audio_path`, and `ref_text`/`reference_text`/`reference_transcript`/`transcript`. Set `overwrite: true` to replace an existing profile. Optional `options` are persisted and merged into future requests for that voice.
 
 The response is immediate and explicit:
 
@@ -205,8 +261,10 @@ Health, discovery, and lifecycle:
 Voices and paralinguistics:
 
 - `GET /providers/{provider_id}/voices` — provider-scoped voice list. Aliases: `GET /runtimes/{provider_id}/voices`, `GET /v1/audio/{provider_id}/voices`.
+- `POST /providers/{provider_id}/voices` — register a saved voice clone for a cloning-capable provider. Aliases: `POST /runtimes/{provider_id}/voices`, `POST /v1/audio/{provider_id}/voices`.
 - `GET /voices` — redirect to the first loaded provider's voice list.
 - `GET /v1/voices` — redirect to the first loaded provider's voice list.
+- `POST /v1/voices` — register a saved voice clone with `provider` or `model` in the JSON body.
 - `GET /providers/{provider_id}/paralinguistics` — provider-scoped paralinguistic/style token list. Aliases: `GET /runtimes/{provider_id}/paralinguistics`, `GET /v1/audio/{provider_id}/paralinguistics`.
 - `GET /v1/audio/paralinguistics` — default paralinguistics endpoint. Defaults to Chatterbox Turbo, or accepts `provider=` / `model=` query params.
 
@@ -328,6 +386,7 @@ curl -X DELETE http://127.0.0.1:8799/v1/audio/jobs/$JOB_ID
 server:
   host: 127.0.0.1
   port: 8799
+  # optional: data_dir controls where data/voice_library is stored
 memory:
   reserve_gb: 12
 providers:
@@ -371,6 +430,8 @@ Common `options` keys:
 - `stream_sample_rate` — stream sample rate, currently `24000` for true PCM providers.
 - `stream_channels` — stream channel count, currently `1`.
 - `stream_sample_format` — stream sample format, currently `pcm16`.
+- `supports_voice_cloning` — whether Universal should allow saved voice registration for this provider.
+- `voice_cloning_requires` — required registration fields, usually `[ref_audio, ref_text]` or `[ref_audio]`.
 - `supports_batching` — whether the Universal API should advertise batching support.
 - `supports_native_batching` — whether the sidecar itself has a native batch path.
 - `max_batch_size` — Universal/native batch size cap.
@@ -938,6 +999,9 @@ Tested against the live `com.liam.universal-tts` LaunchAgent + KittenTTS sidecar
 - `supports_batching`
 - `max_batch_size`
 - `supports_cancellation`
+- `supports_voice_cloning`
+- `voice_cloning_requires`
+- `voice_registration_endpoint`
 - `formats`
 - `voices_endpoint`
 
