@@ -1,5 +1,7 @@
 # Universal TTS
 
+![Universal TTS project banner](assets/universal-tts-banner.png)
+
 Universal TTS is the single local TTS control surface for this machine. It exposes one OpenAI-compatible API on `127.0.0.1:8799`, handles shared runtime concerns once, and routes requests to isolated model/provider sidecars where the heavy or incompatible ML dependencies live.
 
 The current repo covers:
