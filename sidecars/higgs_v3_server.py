@@ -50,6 +50,8 @@ class SpeechRequest(BaseModel):
     seed: int=0
     stream_commit_tokens: int=16
     stream_overlap_tokens: int=4
+    stream_declick_ms: float=8.0
+    stream_declick_threshold: int=300
     max_reference_seconds: float=30.0
     trim_reference_audio: bool=True
 
@@ -114,6 +116,23 @@ def _float_to_pcm16(arr):
     arr=np.asarray(arr,dtype=np.float32).reshape(-1)
     return np.round(np.clip(arr,-1,1)*32767).astype('<i2').tobytes()
 
+def _to_float_np(arr):
+    if hasattr(arr,'detach'): arr=arr.detach().float().cpu().numpy()
+    return np.asarray(arr,dtype=np.float32).reshape(-1)
+
+def _declick_segment_start(segment, prev_last: float|None, ms: float=8.0, threshold_i16: int=300):
+    seg=np.asarray(segment,dtype=np.float32).reshape(-1).copy()
+    if prev_last is None or seg.size==0 or ms<=0:
+        return seg
+    jump_i16=abs(int(round((float(seg[0])-float(prev_last))*32767.0)))
+    if jump_i16 < int(threshold_i16):
+        return seg
+    n=min(seg.size, max(1, int(SAMPLE_RATE*float(ms)/1000.0)))
+    correction=float(prev_last)-float(seg[0])
+    ramp=np.linspace(1.0, 0.0, n, endpoint=False, dtype=np.float32)
+    seg[:n]=seg[:n]+correction*ramp
+    return np.clip(seg,-1.0,1.0)
+
 def _wav(audio):
     pcm=_float_to_pcm16(audio); bio=io.BytesIO()
     with wave.open(bio,'wb') as w:
@@ -147,7 +166,7 @@ def _stream_prefix(req:SpeechRequest)->Iterator[bytes]:
         out=b.model.backbone.model(inputs_embeds=prompt_embeds, use_cache=True)
         past=out.past_key_values; hidden=out.last_hidden_state[:,-1,:]
         state=HiggsSamplerState(num_codebooks=b.model.num_codebooks)
-        rows=[]; emitted=0; commit=max(1,int(req.stream_commit_tokens)); overlap=max(0,int(req.stream_overlap_tokens))
+        rows=[]; emitted_samples=0; prev_last=None; commit=max(1,int(req.stream_commit_tokens)); overlap=max(0,int(req.stream_overlap_tokens))
         for i in range(int(req.max_new_tokens)):
             logits=b.model.modality_head.generate(hidden)[0].to(torch.float32)
             codes=sampler_step(logits,state,temperature=float(req.temperature),top_p=None if req.top_p<=0 or req.top_p>=1 else float(req.top_p),top_k=None if req.top_k<=0 else int(req.top_k))
@@ -159,11 +178,15 @@ def _stream_prefix(req:SpeechRequest)->Iterator[bytes]:
                     # hold back a few codec steps to avoid unstable prefix tails unless final
                     decode_raw=raw if state.generation_done or overlap<=0 else raw[:-overlap]
                     if decode_raw.shape[0]>0:
-                        audio=b.codec.decode(decode_raw)
-                        pcm=_float_to_pcm16(audio)
-                        new=pcm[emitted:]
-                        if new:
-                            emitted += len(new); yield new
+                        audio_np=_to_float_np(b.codec.decode(decode_raw))
+                        target_samples=audio_np.shape[0]
+                        if target_samples>emitted_samples:
+                            segment=audio_np[emitted_samples:target_samples]
+                            segment=_declick_segment_start(segment, prev_last, req.stream_declick_ms, req.stream_declick_threshold)
+                            if segment.size:
+                                prev_last=float(segment[-1])
+                                emitted_samples=target_samples
+                                yield _float_to_pcm16(segment)
                 except Exception:
                     pass
             if state.generation_done or state.last_codes is None: break
