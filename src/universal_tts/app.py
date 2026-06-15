@@ -9,9 +9,10 @@ from typing import AsyncIterator
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from universal_tts.config import load_config
+from universal_tts.srt import build_srt_cues, render_srt
 from universal_tts.memory import get_memory_snapshot
 from universal_tts.queue import JobQueue
 from universal_tts.registry import ProviderRegistry
@@ -119,6 +120,16 @@ class LoadRequest(BaseModel):
     force: bool = False
 
 
+class SRTBuildRequest(BaseModel):
+    text: str = Field(..., description="Plain text to split into timed subtitle cues")
+    total_duration_ms: int | None = Field(default=None, ge=1)
+    words_per_minute: float = Field(default=155.0, gt=1)
+    min_cue_ms: int = Field(default=900, ge=1)
+    max_cue_ms: int = Field(default=6000, ge=1)
+    gap_ms: int = Field(default=80, ge=0)
+    max_chars: int = Field(default=72, ge=8)
+
+
 @app.get("/health")
 async def health():
     return {
@@ -201,6 +212,25 @@ async def v1_models():
 @app.get("/v1/audio/capabilities")
 async def capabilities():
     return await registry.capabilities()
+
+
+@app.post("/v1/audio/srt")
+async def build_srt(req: SRTBuildRequest):
+    cues = build_srt_cues(
+        req.text,
+        total_duration_ms=req.total_duration_ms,
+        words_per_minute=req.words_per_minute,
+        min_cue_ms=req.min_cue_ms,
+        max_cue_ms=req.max_cue_ms,
+        gap_ms=req.gap_ms,
+        max_chars=req.max_chars,
+    )
+    return {
+        "object": "audio.srt",
+        "cue_count": len(cues),
+        "srt": render_srt(cues),
+        "cues": [cue.__dict__ for cue in cues],
+    }
 
 
 @app.get("/providers/{provider_id}/voices")

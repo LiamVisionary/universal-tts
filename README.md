@@ -15,6 +15,8 @@ The current repo covers:
 - Kokoro-82M (dedicated Torch/Misaki sidecar on `.kokoro-venv`)
 - Fish Audio S2 Pro 8-bit MLX (dedicated MLX-Audio sidecar on `.fish-s2-venv`; Fish Audio Research License)
 - CosyVoice3 / Fun-CosyVoice3-0.5B-RL (dedicated Torch sidecar on `.cosyvoice-venv`; adapted from `diodiogod/TTS-Audio-Suite`)
+- Higgs Audio v3 4B (dedicated Torch sidecar on `.higgs-v3-venv`; adapted from `diodiogod/TTS-Audio-Suite`; research/non-commercial license)
+- TTS-Audio-Suite candidate bridge metadata for MOSS-TTS, IndexTTS-2, Step Audio EditX, Granite ASR, and RVC so clients can discover them without falsely treating them as installed realtime engines
 
 Provider sidecars are owned by Universal TTS and should normally not be called directly by clients. Clients should use the Universal TTS endpoints below so request normalization, model routing, memory checks, lifecycle control, audio format conversion, batching, streaming metadata, and provider quirks stay centralized.
 
@@ -29,6 +31,12 @@ Provider sidecars are owned by Universal TTS and should normally not be called d
 - `kokoro` — Kokoro-82M sidecar, port `8783`, dedicated `.kokoro-venv`, 54 voices
 - `fish-s2` — Fish Audio S2 Pro 8-bit MLX sidecar, port `8784`, dedicated `.fish-s2-venv`, zero-shot voice cloning with `ref_audio` + `ref_text`
 - `cosyvoice3` — CosyVoice3 sidecar, port `8785`, dedicated `.cosyvoice-venv`, zero-shot/instruct/cross-lingual voice cloning with paralinguistic tags
+- `higgs-audio-v3` — Higgs Audio v3 sidecar, port `8786`, dedicated `.higgs-v3-venv`, `voice01` saved clone, prefix-incremental PCM streaming, research/non-commercial license
+- `moss-tts` — TTS-Audio-Suite candidate bridge, port `8801`, metadata stub for OpenMOSS long-form/dialogue models; heavy runtime not enabled yet
+- `indextts2` — TTS-Audio-Suite candidate bridge, port `8802`, metadata stub for IndexTTS-2 emotional zero-shot cloning; heavy runtime not enabled yet
+- `step-audio-editx` — TTS-Audio-Suite candidate bridge, port `8803`, metadata stub for post-TTS emotion/style/paralinguistic editing; heavy runtime not enabled yet
+- `granite-asr` — TTS-Audio-Suite candidate bridge, port `8805`, metadata stub for future closed-loop ASR verification; not direct TTS
+- `rvc` — TTS-Audio-Suite candidate bridge, port `8804`, metadata stub for future voice-conversion postprocess; not direct TTS
 
 ### Feature and provider matrix
 
@@ -89,6 +97,20 @@ Use `/v1/audio/capabilities` as the machine-readable source of truth. This repo 
   - Batching: Universal microbatch/sequential fallback, max batch size `2`
   - Main knobs: `voice`, `ref_audio`, `ref_text`, `mode` (`zero_shot`, `instruct`, `cross_lingual`), `instruct`/`instruct_text`, `language` (`en`, `zh`, `ja`, `ko` language tags), `speed`, `text_frontend`, `seed`
   - Paralinguistics: accepts user-friendly `<breath>`, `<quick_breath>`, `<laughter>`, `<cough>`, `<sigh>`, `<gasp>`, `<noise>`, `<hissing>`, `<vocalized-noise>`, `<lipsmack>`, `<mn>`, `<clucking>`, `<accent>` and converts them to CosyVoice3 `[tag]` tokens; `<laughing>...</laughing>` maps to `<laughter>...</laughter>`
+- `higgs-audio-v3`
+  - Models: `higgs-audio-v3`, `higgs-audio-v3-tts-4b`, `bosonai/higgs-audio-v3-tts-4b`
+  - Streaming: prefix-incremental PCM, 24 kHz mono PCM16, `tts-audio-suite-higgs-v3-prefix-decode`; this emits audio before full utterance completion but is not native decoder-frame streaming
+  - Voice cloning: yes, saved voice library supports `ref_audio`; `ref_text` is strongly recommended and preserved in saved profiles such as `voice01`
+  - Batching: Universal microbatch/sequential fallback, max batch size `1`
+  - Main knobs: `voice`, `ref_audio`, `ref_text`, `temperature`, `top_p`, `top_k`, `max_new_tokens`, `stream_commit_tokens`; supports Higgs inline emotion/style/SFX tags from the TTS-Audio-Suite runtime
+  - License: Boson Higgs Audio v3 Research and Non-Commercial License; verify before commercial use
+- `moss-tts` / `indextts2` / `step-audio-editx` / `granite-asr` / `rvc`
+  - Status: catalog/metadata bridge only. These are intentionally visible through `/v1/models`, `/providers/{provider}/voices`, and `/v1/audio/capabilities`, but `/v1/audio/speech` returns `501` until a heavy runtime is installed and verified.
+  - `moss-tts`: OpenMOSS long-form and MOSS-TTSD dialogue candidate; requires MOSS model weights plus `MOSS-Audio-Tokenizer`; no verified Apple-Silicon realtime streaming yet.
+  - `indextts2`: expressive zero-shot clone candidate with separate speaker and emotion controls; useful for `voice01` emotion experiments after install; no verified realtime streaming yet.
+  - `step-audio-editx`: post-TTS edit candidate for emotion/style/speed/paralinguistic transformations; useful after a high-quality base clip exists, not as a calling backend.
+  - `granite-asr`: ASR/transcript-verification candidate for closed-loop checks on generated clips; not direct text-to-speech.
+  - `rvc`: voice-conversion postprocess candidate, not direct text-to-speech; keep it out of realtime TTS selection until Universal has an explicit postprocess pipeline endpoint.
 
 
 ## Service address
@@ -148,6 +170,8 @@ Isolated sidecars:
   - Kokoro-82M Torch/Misaki service on :8783 (dedicated `.kokoro-venv`)
   - Fish Audio S2 Pro MLX service on :8784 (dedicated `.fish-s2-venv`)
   - CosyVoice3 Torch service on :8785 (dedicated `.cosyvoice-venv`, adapted from TTS-Audio-Suite)
+  - Higgs Audio v3 Torch service on :8786 (dedicated `.higgs-v3-venv`, adapted from TTS-Audio-Suite)
+  - TTS-Audio-Suite candidate bridge services on :8801-:8805 for MOSS-TTS, IndexTTS-2, Step Audio EditX, RVC, and Granite ASR metadata/stub discovery
 ```
 
 Common code lives in `src/universal_tts/`:
@@ -161,6 +185,7 @@ Common code lives in `src/universal_tts/`:
 - `memory.py` — Apple unified-memory snapshot and OOM guard.
 - `audio.py` — `response_format` normalization and ffmpeg conversion.
 - `queue.py` — cancellable async audio jobs.
+- `srt.py` — lightweight SRT cue splitting/timing helper adapted from the useful TTS-Audio-Suite subtitle workflow ideas.
 
 ## Core features
 
@@ -178,6 +203,7 @@ Common code lives in `src/universal_tts/`:
 - **Paralinguistics discovery**: Chatterbox and other providers can expose supported nonverbal/style tokens through provider-specific or default paralinguistics endpoints.
 - **Batch APIs**: `/v1/audio/batches` handles grouped requests. The registry also microbatches concurrent `/v1/audio/speech` calls per provider.
 - **Async jobs and cancellation**: `/v1/audio/jobs` creates cancellable background synthesis jobs; job content can be fetched after completion.
+- **SRT timing helper**: `/v1/audio/srt` builds simple timed subtitle cues from text using configurable duration/WPM/gap settings, bringing over the useful subtitle-timing workflow from TTS-Audio-Suite without adding heavy ASR dependencies.
 - **Privacy-preserving proxy**: `/proxy/{provider}/{path}` forwards to sidecars without logging request bodies or prompts.
 
 ## Request model

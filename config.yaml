@@ -443,6 +443,155 @@ providers:
       license_name: Boson Higgs Audio v3 Research and Non-Commercial License
       license_summary: research and non-commercial use; verify license before commercial use
       formats: [wav, mp3, opus, flac, aac, pcm]
+  moss-tts:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: env SUITE_PROVIDER_ID=moss-tts PORT=8801 /Users/liam/voice-lab/universal-tts/sidecars/tts_audio_suite_catalog_sidecar.sh
+    base_url: http://127.0.0.1:8801
+    health_path: /health
+    port: 8801
+    estimate_gb: 20
+    models:
+      - MOSS-TTS-Local-Transformer
+      - MOSS-TTS
+      - MOSS-TTSD-v1.0
+    notes: "TTS-Audio-Suite MOSS-TTS candidate bridge. Catalog/metadata stub only until the large OpenMOSS model + MOSS-Audio-Tokenizer runtime is installed and verified. Useful future target for long-form narration and MOSS-TTSD dialogue; not advertised as realtime."
+    options:
+      supports_true_streaming: false
+      streaming_kind: unavailable
+      streaming_mode: not-enabled-local-runtime-pending
+      streaming_implementation: tts-audio-suite-moss-tts-catalog
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      supports_voice_cloning: false
+      supports_dialogue: true
+      voices: [default]
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 1
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  indextts2:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: env SUITE_PROVIDER_ID=indextts2 PORT=8802 /Users/liam/voice-lab/universal-tts/sidecars/tts_audio_suite_catalog_sidecar.sh
+    base_url: http://127.0.0.1:8802
+    health_path: /health
+    port: 8802
+    estimate_gb: 12
+    models:
+      - IndexTTS-2
+      - IndexTeam/IndexTTS-2
+    notes: "TTS-Audio-Suite IndexTTS-2 candidate bridge. Catalog/metadata stub only until weights/deps are installed and verified. Benefit: expressive zero-shot cloning with separate speaker and emotion control; no verified realtime stream yet."
+    options:
+      supports_true_streaming: false
+      streaming_kind: unavailable
+      streaming_mode: full-generation-engine-cataloged-not-realtime
+      streaming_implementation: tts-audio-suite-indextts2-catalog
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio]
+      supports_emotion_control: true
+      voices: [clone]
+      voice_aliases:
+        voice01: clone
+        liam-default: clone
+        clone: clone
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 1
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  step-audio-editx:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: env SUITE_PROVIDER_ID=step-audio-editx PORT=8803 /Users/liam/voice-lab/universal-tts/sidecars/tts_audio_suite_catalog_sidecar.sh
+    base_url: http://127.0.0.1:8803
+    health_path: /health
+    port: 8803
+    estimate_gb: 10
+    models:
+      - Step-Audio-EditX
+      - stepfun-ai/Step-Audio-EditX
+    notes: "TTS-Audio-Suite Step Audio EditX candidate bridge. Catalog/metadata stub only until runtime is installed and verified. Benefit: post-TTS editing/voice cloning with emotion, style, speed, and paralinguistic controls; not a realtime calling backend."
+    options:
+      supports_true_streaming: false
+      streaming_kind: unavailable
+      streaming_mode: audio-edit/full-generation-cataloged-not-realtime
+      streaming_implementation: tts-audio-suite-step-audio-editx-catalog
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio, ref_text]
+      supports_audio_editing: true
+      voices: [clone]
+      voice_aliases:
+        voice01: clone
+        liam-default: clone
+        clone: clone
+      paralinguistics:
+        - {token: "[Breathing]", kind: nonverbal, label: Breathing, supported: false}
+        - {token: "[Laughter]", kind: nonverbal, label: Laughter, supported: false}
+        - {token: "[Sigh]", kind: nonverbal, label: Sigh, supported: false}
+        - {token: "[Uhm]", kind: nonverbal, label: Uhm, supported: false}
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 1
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  granite-asr:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: env SUITE_PROVIDER_ID=granite-asr PORT=8805 /Users/liam/voice-lab/universal-tts/sidecars/tts_audio_suite_catalog_sidecar.sh
+    base_url: http://127.0.0.1:8805
+    health_path: /health
+    port: 8805
+    estimate_gb: 6
+    models:
+      - granite-4.0-1b-speech
+      - ibm-granite/granite-4.0-1b-speech
+    notes: "TTS-Audio-Suite Granite ASR candidate bridge. Catalog/metadata stub only. Granite is for future closed-loop transcript verification of generated clips, not direct text-to-speech."
+    options:
+      supports_true_streaming: false
+      streaming_kind: unavailable
+      streaming_mode: asr-verification-candidate-not-tts
+      streaming_implementation: tts-audio-suite-granite-asr-catalog
+      supports_voice_cloning: false
+      supports_transcription: true
+      supports_translation: true
+      supports_batching: false
+      supports_native_batching: false
+      max_batch_size: 1
+      formats: []
+  rvc:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: env SUITE_PROVIDER_ID=rvc PORT=8804 /Users/liam/voice-lab/universal-tts/sidecars/tts_audio_suite_catalog_sidecar.sh
+    base_url: http://127.0.0.1:8804
+    health_path: /health
+    port: 8804
+    estimate_gb: 5
+    models:
+      - rvc
+      - RVC
+    notes: "TTS-Audio-Suite RVC candidate bridge. Catalog/metadata stub only. RVC is voice conversion/postprocessing, not text-to-speech; keep it out of realtime TTS routing unless a postprocess pipeline endpoint is added."
+    options:
+      supports_true_streaming: false
+      streaming_kind: unavailable
+      streaming_mode: postprocess-conversion-not-tts
+      streaming_implementation: tts-audio-suite-rvc-catalog
+      supports_voice_cloning: false
+      supports_voice_conversion: true
+      supports_batching: false
+      supports_native_batching: false
+      max_batch_size: 1
+      formats: [wav]
   fish-s2:
     kind: http
     category: tts
