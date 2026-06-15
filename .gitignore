@@ -15,6 +15,7 @@ htmlcov/
 .fish-s2-venv/
 .cosyvoice-venv/
 .higgs-v3-venv/
+.higgs-mlx-venv/
 venv/
 env/
 

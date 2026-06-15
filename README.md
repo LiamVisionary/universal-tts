@@ -16,6 +16,7 @@ The current repo covers:
 - Fish Audio S2 Pro 8-bit MLX (dedicated MLX-Audio sidecar on `.fish-s2-venv`; Fish Audio Research License)
 - CosyVoice3 / Fun-CosyVoice3-0.5B-RL (dedicated Torch sidecar on `.cosyvoice-venv`; adapted from `diodiogod/TTS-Audio-Suite`)
 - Higgs Audio v3 4B (dedicated Torch sidecar on `.higgs-v3-venv`; adapted from `diodiogod/TTS-Audio-Suite`; research/non-commercial license)
+- Higgs Audio v3 4B MLX (dedicated MLX sidecar on `.higgs-mlx-venv`; lower-memory Apple Silicon path via `mlx-audio`)
 - TTS-Audio-Suite candidate bridge metadata for MOSS-TTS, IndexTTS-2, Step Audio EditX, Granite ASR, and RVC so clients can discover them without falsely treating them as installed realtime engines
 
 Provider sidecars are owned by Universal TTS and should normally not be called directly by clients. Clients should use the Universal TTS endpoints below so request normalization, model routing, memory checks, lifecycle control, audio format conversion, batching, streaming metadata, and provider quirks stay centralized.
@@ -32,6 +33,7 @@ Provider sidecars are owned by Universal TTS and should normally not be called d
 - `fish-s2` — Fish Audio S2 Pro 8-bit MLX sidecar, port `8784`, dedicated `.fish-s2-venv`, zero-shot voice cloning with `ref_audio` + `ref_text`
 - `cosyvoice3` — CosyVoice3 sidecar, port `8785`, dedicated `.cosyvoice-venv`, zero-shot/instruct/cross-lingual voice cloning with paralinguistic tags
 - `higgs-audio-v3` — Higgs Audio v3 sidecar, port `8786`, dedicated `.higgs-v3-venv`, `voice01` saved clone, prefix-incremental PCM streaming, research/non-commercial license
+- `higgs-audio-v3-mlx` — Higgs Audio v3 MLX sidecar, port `8806`, dedicated `.higgs-mlx-venv`, `voice01` default clone, prefix-incremental PCM streaming, lower resident RAM than Torch CPU
 - `moss-tts` — TTS-Audio-Suite candidate bridge, port `8801`, metadata stub for OpenMOSS long-form/dialogue models; heavy runtime not enabled yet
 - `indextts2` — TTS-Audio-Suite candidate bridge, port `8802`, metadata stub for IndexTTS-2 emotional zero-shot cloning; heavy runtime not enabled yet
 - `step-audio-editx` — TTS-Audio-Suite candidate bridge, port `8803`, metadata stub for post-TTS emotion/style/paralinguistic editing; heavy runtime not enabled yet
@@ -104,6 +106,13 @@ Use `/v1/audio/capabilities` as the machine-readable source of truth. This repo 
   - Batching: Universal microbatch/sequential fallback, max batch size `1`
   - Main knobs: `voice`, `ref_audio`, `ref_text`, `temperature`, `top_p`, `top_k`, `max_new_tokens`, `stream_commit_tokens`; supports Higgs inline emotion/style/SFX tags from the TTS-Audio-Suite runtime
   - License: Boson Higgs Audio v3 Research and Non-Commercial License; verify before commercial use
+- `higgs-audio-v3-mlx`
+  - Models: `higgs-audio-v3-mlx`, `higgs-audio-v3-tts-4b-mlx`, `mlx-audio-higgs-audio-v3-tts-4b`
+  - Runtime: `mlx-audio`/Metal sidecar in `.higgs-mlx-venv`; same local Higgs checkpoint, but avoids Torch CPU float32 expansion
+  - Memory: smoke test loaded resident RSS around `9.3GB` versus the Torch CPU sidecar around `17.5GB`
+  - Streaming: prefix-incremental PCM, 24 kHz mono PCM16, `mlx-audio-higgs-v3-prefix-decode`; not native decoder-frame streaming
+  - Voice cloning: yes; `voice01` and `liam-default` use the local reference clip/transcript by default, and direct requests can still pass `ref_audio` + `ref_text`
+  - Caveat: the bundled bfloat16 codec tensors require `torch` installed in the MLX venv for safetensors fallback loading
 - `moss-tts` / `indextts2` / `step-audio-editx` / `granite-asr` / `rvc`
   - Status: catalog/metadata bridge only. These are intentionally visible through `/v1/models`, `/providers/{provider}/voices`, and `/v1/audio/capabilities`, but `/v1/audio/speech` returns `501` until a heavy runtime is installed and verified.
   - `moss-tts`: OpenMOSS long-form and MOSS-TTSD dialogue candidate; requires MOSS model weights plus `MOSS-Audio-Tokenizer`; no verified Apple-Silicon realtime streaming yet.
@@ -171,6 +180,7 @@ Isolated sidecars:
   - Fish Audio S2 Pro MLX service on :8784 (dedicated `.fish-s2-venv`)
   - CosyVoice3 Torch service on :8785 (dedicated `.cosyvoice-venv`, adapted from TTS-Audio-Suite)
   - Higgs Audio v3 Torch service on :8786 (dedicated `.higgs-v3-venv`, adapted from TTS-Audio-Suite)
+  - Higgs Audio v3 MLX service on :8806 (dedicated `.higgs-mlx-venv`, via mlx-audio)
   - TTS-Audio-Suite candidate bridge services on :8801-:8805 for MOSS-TTS, IndexTTS-2, Step Audio EditX, RVC, and Granite ASR metadata/stub discovery
 ```
 
