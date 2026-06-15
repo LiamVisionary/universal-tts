@@ -349,6 +349,52 @@ providers:
       max_batch_size: 4
       batch_window_ms: 25
       formats: [wav, mp3, opus, flac, aac, pcm]
+  cosyvoice3:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: /Users/liam/voice-lab/universal-tts/sidecars/cosyvoice3_sidecar.sh
+    base_url: http://127.0.0.1:8785
+    health_path: /health
+    port: 8785
+    estimate_gb: 7
+    models:
+      - cosyvoice3
+      - Fun-CosyVoice3-0.5B
+      - Fun-CosyVoice3-0.5B-RL
+      - FunAudioLLM/Fun-CosyVoice3-0.5B-2512
+    notes: "CosyVoice3 sidecar adapted from diodiogod/TTS-Audio-Suite's Fun-CosyVoice3 support. Provides 24 kHz zero-shot/cross-lingual/instruct voice cloning, paralinguistic tags such as <breath>/<laughter>, and raw PCM streaming from the model's stream=True generator."
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: cosyvoice3-model-tts-stream
+      streaming_implementation: tts-audio-suite-cosyvoice3
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      stream_read_bytes: 960
+      default_model: Fun-CosyVoice3-0.5B-RL
+      default_voice: clone
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio]
+      modes: [zero_shot, instruct, cross_lingual]
+      languages: [chinese, english, japanese, korean, german, spanish, french, italian, russian]
+      cross_lingual_language_tags: [en, zh, ja, ko]
+      paralinguistics_paths: [/v1/audio/paralinguistics]
+      voices_paths: [/v1/voices]
+      voices:
+        - clone
+      voice_aliases:
+        liam-default: clone
+        voice01: clone
+        clone: clone
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 2
+      batch_window_ms: 25
+      formats: [wav, mp3, opus, flac, aac, pcm]
   fish-s2:
     kind: http
     category: tts

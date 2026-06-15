@@ -14,6 +14,7 @@ The current repo covers:
 - KittenTTS (dedicated ONNX sidecar on `.kitten-venv`)
 - Kokoro-82M (dedicated Torch/Misaki sidecar on `.kokoro-venv`)
 - Fish Audio S2 Pro 8-bit MLX (dedicated MLX-Audio sidecar on `.fish-s2-venv`; Fish Audio Research License)
+- CosyVoice3 / Fun-CosyVoice3-0.5B-RL (dedicated Torch sidecar on `.cosyvoice-venv`; adapted from `diodiogod/TTS-Audio-Suite`)
 
 Provider sidecars are owned by Universal TTS and should normally not be called directly by clients. Clients should use the Universal TTS endpoints below so request normalization, model routing, memory checks, lifecycle control, audio format conversion, batching, streaming metadata, and provider quirks stay centralized.
 
@@ -27,6 +28,7 @@ Provider sidecars are owned by Universal TTS and should normally not be called d
 - `kitten` — ONNX sidecar, port `8782`, dedicated `.kitten-venv`
 - `kokoro` — Kokoro-82M sidecar, port `8783`, dedicated `.kokoro-venv`, 54 voices
 - `fish-s2` — Fish Audio S2 Pro 8-bit MLX sidecar, port `8784`, dedicated `.fish-s2-venv`, zero-shot voice cloning with `ref_audio` + `ref_text`
+- `cosyvoice3` — CosyVoice3 sidecar, port `8785`, dedicated `.cosyvoice-venv`, zero-shot/instruct/cross-lingual voice cloning with paralinguistic tags
 
 ### Feature and provider matrix
 
@@ -80,6 +82,13 @@ Use `/v1/audio/capabilities` as the machine-readable source of truth. This repo 
   - Voice cloning: yes, saved voice library supports `ref_audio` + `ref_text`; direct request-time mode also accepts `voice: clone` with those fields
   - Batching: Universal microbatch/sequential fallback, max batch size `2`
   - Main knobs: `voice`, `ref_audio`, `ref_text`, `lang`, `max_tokens`, `chunk_length`, `stream_commit_tokens`, `stream_frame_ms`, `realtime_pacing`
+- `cosyvoice3`
+  - Models: `cosyvoice3`, `Fun-CosyVoice3-0.5B`, `Fun-CosyVoice3-0.5B-RL`, `FunAudioLLM/Fun-CosyVoice3-0.5B-2512`
+  - Streaming: true model `stream=True` PCM, 24 kHz mono PCM16, `cosyvoice3-model-tts-stream`
+  - Voice cloning: yes, saved voice library supports `ref_audio`; `ref_text` is recommended for zero-shot fidelity and required when explicitly using `mode: zero_shot`
+  - Batching: Universal microbatch/sequential fallback, max batch size `2`
+  - Main knobs: `voice`, `ref_audio`, `ref_text`, `mode` (`zero_shot`, `instruct`, `cross_lingual`), `instruct`/`instruct_text`, `language` (`en`, `zh`, `ja`, `ko` language tags), `speed`, `text_frontend`, `seed`
+  - Paralinguistics: accepts user-friendly `<breath>`, `<quick_breath>`, `<laughter>`, `<cough>`, `<sigh>`, `<gasp>`, `<noise>`, `<hissing>`, `<vocalized-noise>`, `<lipsmack>`, `<mn>`, `<clucking>`, `<accent>` and converts them to CosyVoice3 `[tag]` tokens; `<laughing>...</laughing>` maps to `<laughter>...</laughter>`
 
 
 ## Service address
@@ -127,7 +136,7 @@ Provider adapters:
   - MisoProvider
   - ChatterboxTurboProvider
   - KittenTTSProvider (HTTP-backed ONNX sidecar client)
-  - generic HttpBackedProvider for Kokoro / Fish S2 / VibeVoice CoreML / VibeVoice.cpp and future HTTP providers
+  - generic HttpBackedProvider for Kokoro / Fish S2 / CosyVoice3 / VibeVoice CoreML / VibeVoice.cpp and future HTTP providers
   ↓
 Isolated sidecars:
   - qwen3 MLX service on :8766
@@ -138,6 +147,7 @@ Isolated sidecars:
   - KittenTTS ONNX service on :8782 (dedicated `.kitten-venv`)
   - Kokoro-82M Torch/Misaki service on :8783 (dedicated `.kokoro-venv`)
   - Fish Audio S2 Pro MLX service on :8784 (dedicated `.fish-s2-venv`)
+  - CosyVoice3 Torch service on :8785 (dedicated `.cosyvoice-venv`, adapted from TTS-Audio-Suite)
 ```
 
 Common code lives in `src/universal_tts/`:
@@ -189,6 +199,7 @@ Universal TTS has a persistent voice library for providers that support referenc
 Supported clone-library providers:
 
 - `fish-s2` — stores `ref_audio` + `ref_text`; future requests are rewritten to Fish clone mode with those fields.
+- `cosyvoice3` — stores `ref_audio` and optional/recommended `ref_text`; future requests pass those fields to the CosyVoice3 zero-shot/instruct/cross-lingual sidecar.
 - `qwen3` — stores `ref_audio` + `ref_text`; future requests pass those fields to the Qwen MLX sidecar for ICL/reference cloning.
 - `miso` — stores `ref_audio` + `ref_text`; future requests pass `reference_audio_path` + `reference_transcript` to Miso.
 - `chatterbox-turbo` — stores `ref_audio`; future requests use Chatterbox clone mode with the saved reference path.

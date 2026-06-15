@@ -13,6 +13,7 @@ htmlcov/
 .kitten-venv/
 .kokoro-venv/
 .fish-s2-venv/
+.cosyvoice-venv/
 venv/
 env/
 
