@@ -395,6 +395,54 @@ providers:
       max_batch_size: 2
       batch_window_ms: 25
       formats: [wav, mp3, opus, flac, aac, pcm]
+  higgs-audio-v3:
+    kind: http
+    category: tts
+    cwd: /Users/liam/voice-lab/universal-tts
+    command: /Users/liam/voice-lab/universal-tts/sidecars/higgs_v3_sidecar.sh
+    base_url: http://127.0.0.1:8786
+    health_path: /health
+    port: 8786
+    estimate_gb: 18
+    models:
+      - higgs-audio-v3
+      - higgs-audio-v3-tts-4b
+      - bosonai/higgs-audio-v3-tts-4b
+    notes: "Higgs Audio v3 4B sidecar adapted from TTS-Audio-Suite native runtime. Research/non-commercial license. Supports zero-shot voice cloning with ref_audio/ref_text, inline emotion/style/prosody/SFX tags, and a prefix-incremental codebook decode streaming path for realtime Universal TTS delivery."
+    options:
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: prefix-incremental-codec-decode
+      streaming_implementation: tts-audio-suite-higgs-v3-prefix-decode
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      stream_read_bytes: 960
+      default_model: higgs-audio-v3-tts-4b
+      default_voice: clone
+      default_max_new_tokens: 512
+      default_temperature: 0.8
+      default_top_p: 0.95
+      default_top_k: 50
+      default_stream_commit_tokens: 16
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio]
+      voices_paths: [/v1/voices]
+      voices:
+        - clone
+      voice_aliases:
+        voice01: clone
+        liam-default: clone
+        clone: clone
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 1
+      batch_window_ms: 25
+      license_name: Boson Higgs Audio v3 Research and Non-Commercial License
+      license_summary: research and non-commercial use; verify license before commercial use
+      formats: [wav, mp3, opus, flac, aac, pcm]
   fish-s2:
     kind: http
     category: tts
