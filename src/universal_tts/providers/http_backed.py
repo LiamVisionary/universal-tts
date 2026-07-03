@@ -36,6 +36,10 @@ class HttpBackedProvider:
         self.last_restart_reason: str | None = None
         self.last_successful_synth: float | None = None
         self.last_error: str | None = None
+        # Universal streaming watchdog: how many times a synth was aborted because
+        # the upstream sidecar produced no bytes within the budget (any provider).
+        self.stream_abort_count = 0
+        self.last_stream_abort_at: float | None = None
         self._monitor_task: asyncio.Task | None = None
         self._monitor_stop: asyncio.Event | None = None
         self._probe_due_at = 0.0
@@ -48,6 +52,8 @@ class HttpBackedProvider:
             "last_restart_reason": self.last_restart_reason,
             "last_successful_synth": self.last_successful_synth,
             "last_error": self.last_error,
+            "stream_abort_count": self.stream_abort_count,
+            "last_stream_abort_at": self.last_stream_abort_at,
             "lifecycle": self.lifecycle.last_start_result or {},
         }
 
@@ -347,16 +353,34 @@ class HttpBackedProvider:
                         raise RuntimeError(f"{self.cfg.id} streaming failed: {response.status_code} {body[:500]!r}")
                     stream_read_bytes = int(self.cfg.options.get("stream_read_bytes", 4096))
                     ait = response.aiter_bytes(chunk_size=stream_read_bytes).__aiter__()
-                    no_bytes_timeout = float(request.options.get("stream_no_bytes_timeout_sec", self.cfg.options.get("stream_no_bytes_timeout_sec", 60.0)))
+                    # Universal stall watchdog for ANY provider: bound the wait for
+                    # the FIRST audio byte separately (a provider that never starts)
+                    # from the gap BETWEEN frames (a provider that stalls mid-stream).
+                    # The first-byte budget is generous so slow full-generate/cold
+                    # providers aren't falsely aborted; sidecars with their own
+                    # per-frame watchdog (e.g. qwen3) fail faster underneath this.
+                    first_byte_timeout = float(request.options.get(
+                        "stream_first_byte_timeout_sec",
+                        self.cfg.options.get("stream_first_byte_timeout_sec", 90.0)))
+                    no_bytes_timeout = float(request.options.get(
+                        "stream_no_bytes_timeout_sec",
+                        self.cfg.options.get("stream_no_bytes_timeout_sec", 60.0)))
+                    produced_any = False
                     while True:
+                        budget = no_bytes_timeout if produced_any else first_byte_timeout
                         try:
-                            chunk = await asyncio.wait_for(ait.__anext__(), timeout=no_bytes_timeout)
+                            chunk = await asyncio.wait_for(ait.__anext__(), timeout=budget)
                         except StopAsyncIteration:
                             break
                         except asyncio.TimeoutError as e:
-                            await self._restart_sidecar(f"stream watchdog: no bytes for {no_bytes_timeout}s", force=True)
-                            raise RuntimeError(f"{self.cfg.id} stream watchdog: no bytes for {no_bytes_timeout}s") from e
+                            where = "mid-stream" if produced_any else "before first byte"
+                            reason = f"stream watchdog: no bytes for {budget:.0f}s ({where})"
+                            self.stream_abort_count += 1
+                            self.last_stream_abort_at = time.time()
+                            await self._restart_sidecar(reason, force=True)
+                            raise RuntimeError(f"{self.cfg.id} {reason}") from e
                         if chunk:
+                            produced_any = True
                             self.last_successful_synth = time.time()
                             self.last_error = None
                             yield chunk
