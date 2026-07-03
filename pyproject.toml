@@ -3,7 +3,7 @@ name = "universal-tts"
 version = "0.1.0"
 description = "Unified local TTS runtime with provider adapters for Qwen3-TTS, MisoTTS, and Chatterbox Turbo."
 requires-python = ">=3.11"
-dependencies = ["fastapi", "uvicorn", "httpx", "pyyaml", "pydantic"]
+dependencies = ["fastapi", "uvicorn", "httpx", "pyyaml", "pydantic", "huggingface_hub"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

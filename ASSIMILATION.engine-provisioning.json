@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-07-02T06:55:23.850429+00:00",
+  "request": "Add automatic engine provisioning to Universal TTS",
+  "custom_code_assessment": "balanced",
+  "entries": [
+    {
+      "source_repo": "0xShug0/audio.cpp",
+      "source_path": "tools/model_manager.py",
+      "target_path": "src/universal_tts/provisioning.py",
+      "reuse_type": "adapted_code",
+      "note": "qwen3_tts_0_6b_base ModelPackage/SnapshotSource adapted into ModelSpec + HF snapshot install flow"
+    },
+    {
+      "source_repo": "0xShug0/audio.cpp",
+      "source_path": "scripts/build_metal.sh",
+      "target_path": "config.yaml",
+      "reuse_type": "config_adapted",
+      "note": "provision.engine.build.darwin command with build-dir/type/target/jobs flags"
+    },
+    {
+      "source_repo": "0xShug0/audio.cpp",
+      "source_path": "scripts/build_linux.sh",
+      "target_path": "config.yaml",
+      "reuse_type": "config_adapted",
+      "note": "provision.engine.build.linux cpu-backend command with deterministic build dir"
+    },
+    {
+      "source_repo": "0xShug0/audio.cpp",
+      "source_path": "scripts/build_windows.ps1",
+      "target_path": "config.yaml",
+      "reuse_type": "config_adapted",
+      "note": "provision.engine.build.windows cuda preset command"
+    },
+    {
+      "source_repo": "0xShug0/audio.cpp",
+      "source_path": "server-qwen3-metal.json",
+      "target_path": "/Users/liam/voice-lab/audio.cpp/server-qwen3-cpu.json",
+      "reuse_type": "config_adapted",
+      "note": "backend-swapped server config for CPU machines (cuda variant alongside)"
+    },
+    {
+      "source_repo": "universal-tts",
+      "source_path": "src/universal_tts/lifecycle.py",
+      "target_path": "src/universal_tts/provisioning.py",
+      "reuse_type": "adapted_code",
+      "note": "logs-dir and shell subprocess conventions for provision build/logging"
+    }
+  ]
+}

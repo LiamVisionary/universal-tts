@@ -7,7 +7,7 @@ providers:
   qwen3:
     kind: qwen3
     category: tts
-    cwd: /Users/liam/voice-lab/qwen3-mlx
+    cwd: /Users/liam/voice-lab/universal-tts/sidecars/qwen3-mlx
     command: /Users/liam/voice-lab/mlx-chatterbox/.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8766
     port: 8766
     base_url: http://127.0.0.1:8766
@@ -19,9 +19,20 @@ providers:
       - qwen3-tts-1.7b-base-clone
       - qwen3-tts-0.6b-custom
       - qwen3-tts-0.6b-base-clone
-      - tts-1
     notes: Qwen3-TTS MLX adapter; Apple Silicon local true streaming via mlx-audio streaming_step, raw PCM chunks, and resident 0.6B Base 8-bit model with voice01 reference-clone ICL profile.
     options:
+      # MLX requires Apple Silicon. Fastest realtime path on this machine:
+      # ~219 ms warmed TTFB (benchmarked 2026-07-01, 0.6B Base).
+      platforms: [darwin-arm64]
+      auto_route_ttfb_ms: 220
+      default_model: qwen3-tts-0.6b-base-clone
+      load_path: /load
+      load_timeout_sec: 240
+      synth_probe_interval_sec: 30
+      synth_probe_timeout_sec: 60
+      stream_no_bytes_timeout_sec: 60
+      restart_backoff_base_sec: 1
+      restart_backoff_max_sec: 10
       stream_path: /v1/audio/speech-stream
       stream_content_type: audio/pcm
       supports_true_streaming: true
@@ -39,6 +50,84 @@ providers:
       max_batch_size: 4
       batch_window_ms: 25
       batch_path: /v1/audio/batches
+      formats: [wav, mp3, opus, flac, aac, pcm]
+  audiocpp-qwen3:
+    kind: audiocpp
+    category: tts
+    cwd: /Users/liam/voice-lab/audio.cpp
+    # One config serves every machine: the platform-matching command is picked at
+    # startup, and missing binaries/models are auto-provisioned on first load.
+    command_by_platform:
+      darwin: /Users/liam/voice-lab/audio.cpp/build/macos-metal-release/bin/audiocpp_server --config /Users/liam/voice-lab/audio.cpp/server-qwen3-metal.json
+      linux: build/linux-cpu-release/bin/audiocpp_server --config server-qwen3-cpu.json
+      windows: build/windows-cuda-release/bin/audiocpp_server.exe --config server-qwen3-cuda.json
+    command: /Users/liam/voice-lab/audio.cpp/build/macos-metal-release/bin/audiocpp_server --config /Users/liam/voice-lab/audio.cpp/server-qwen3-metal.json
+    port: 8810
+    base_url: http://127.0.0.1:8810
+    health_path: /health
+    estimate_gb: 4
+    models:
+      - audiocpp-qwen3-tts-0.6b-base
+    notes: audio.cpp Qwen3-TTS 0.6B Base on ggml/Metal. Server /v1/audio/speech-stream emits raw PCM16 chunks during generation (locally patched incremental decoder), so Universal streams first audio before synthesis completes.
+    options:
+      # ggml runs on any OS/GPU; the command above is this machine's Metal
+      # build — on Windows/Linux point it at a CUDA/CPU audiocpp_server build.
+      # ~2.2 s warmed streaming TTFB (benchmarked 2026-07-01, 0.6B Base).
+      platforms: [any]
+      auto_route_ttfb_ms: 2200
+      default_model: audiocpp-qwen3-tts-0.6b-base
+      upstream_model: audiocpp-qwen3-tts-0.6b-base
+      voice_mode: reference
+      default_ref_audio: /Users/liam/voice-lab/universal-tts/data/voice_library/qwen3/voice01.wav
+      default_ref_text: They let me pick. Did I ever tell you that? Choose whichever Spartan I wanted. You know me.
+      stream_path: /v1/audio/speech-stream
+      stream_content_type: audio/pcm
+      supports_true_streaming: true
+      streaming_kind: pcm16
+      streaming_mode: decoder-incremental
+      streaming_implementation: audio.cpp-metal-chunked-pcm
+      stream_sample_rate: 24000
+      stream_channels: 1
+      stream_sample_format: pcm16
+      default_request_options:
+        text_chunk_size: 512
+        stream_first_chunk_frames: 4
+        stream_chunk_frames: 30
+      # Auto engine provisioning: builds use audio.cpp's own platform build
+      # scripts; model packages mirror audio.cpp tools/model_manager.py.
+      provision:
+        auto: true
+        engine:
+          check_paths:
+            darwin: build/macos-metal-release/bin/audiocpp_server
+            linux: build/linux-cpu-release/bin/audiocpp_server
+            windows: build/windows-cuda-release/bin/audiocpp_server.exe
+          build:
+            darwin: bash scripts/build_metal.sh --build-dir build/macos-metal-release --build-type Release --target audiocpp_server -j 3
+            linux: bash scripts/build_linux.sh --build-dir build/linux-cpu-release --backend cpu --build-type Release --target audiocpp_server
+            windows: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Preset windows-cuda-release -Target audiocpp_server
+        models:
+          - repo_id: Qwen/Qwen3-TTS-12Hz-0.6B-Base
+            target_dir: models/Qwen3-TTS-12Hz-0.6B-Base
+            required_files:
+              - config.json
+              - generation_config.json
+              - model.safetensors
+              - speech_tokenizer/config.json
+              - speech_tokenizer/model.safetensors
+              - tokenizer_config.json
+              - vocab.json
+              - merges.txt
+      supports_voice_cloning: true
+      voice_cloning_requires: [ref_audio, ref_text]
+      voices:
+        - voice01
+      voice_aliases:
+        liam-default: voice01
+        voice01: voice01
+      supports_batching: true
+      supports_native_batching: false
+      max_batch_size: 1
       formats: [wav, mp3, opus, flac, aac, pcm]
   miso:
     kind: miso

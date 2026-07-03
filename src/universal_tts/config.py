@@ -40,6 +40,23 @@ class RuntimeConfig:
         return out
 
 
+def _resolve_command(item: dict[str, Any]) -> str | None:
+    """Pick the `command_by_platform` entry for this machine, falling back to `command`.
+
+    Keys may be a full selector ('darwin-arm64'), a bare OS ('windows'), or 'any',
+    so one config file can describe every machine in the fleet.
+    """
+    by_platform = item.get("command_by_platform")
+    if isinstance(by_platform, dict):
+        from universal_tts.platforms import current_platform
+
+        machine = current_platform()
+        for key in (machine, machine.split("-")[0], "any"):
+            if key in by_platform:
+                return by_platform[key]
+    return item.get("command")
+
+
 def load_config_dict(raw: dict[str, Any]) -> RuntimeConfig:
     providers: dict[str, ProviderConfig] = {}
     for provider_id, item in (raw.get("providers") or {}).items():
@@ -57,7 +74,7 @@ def load_config_dict(raw: dict[str, Any]) -> RuntimeConfig:
             launchd_label=item.get("launchd_label") or item.get("label"),
             plist=item.get("plist"),
             cwd=item.get("cwd"),
-            command=item.get("command"),
+            command=_resolve_command(item),
             port=item.get("port"),
             notes=item.get("notes"),
             options=dict(item.get("options") or {}),

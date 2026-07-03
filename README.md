@@ -249,7 +249,7 @@ curl -X POST http://127.0.0.1:8799/providers/fish-s2/voices \
     "voice_id": "voice01",
     "name": "Voice 01",
     "ref_audio": "/Users/liam/voice-lab/Chatterbox-TTS-Server/voices/voice1-all-samples-10s.wav",
-    "ref_text": "They let me pick. Did I ever tell you that? Choose whichever Spartan I wanted. You know me. I did my research. Watched as you became the soldier we needed you to be.",
+    "ref_text": "They let me pick. Did I ever tell you that? Choose whichever Spartan I wanted. You know me.",
     "overwrite": true
   }'
 ```
@@ -306,6 +306,22 @@ Health, discovery, and lifecycle:
 - `POST /load-profile/voice-all` — attempt to load every configured provider in `multi` mode.
 - `GET /v1/models` — OpenAI-style model list with provider and loaded state.
 - `GET /capabilities` — full capability report. Alias: `GET /v1/audio/capabilities`.
+- `GET /v1/routing` — machine-aware routing report: detected platform, which providers this machine supports, and the recommended provider/model that `model: "auto"` resolves to. Alias: `GET /routing`.
+
+Machine-aware auto routing:
+
+- Requests with `model: "auto"` (or the OpenAI generic ids `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`, or no model at all) route to the fastest provider supported on the current machine.
+- Providers declare support via `options.platforms` in `config.yaml` (`any`, an OS like `windows`, or an os-arch pair like `darwin-arm64`) and are ranked by measured `options.auto_route_ttfb_ms`; unranked providers come last, config order breaks ties. Providers without a `platforms` key are assumed supported.
+- On Apple Silicon this resolves to the MLX `qwen3` provider (~220 ms warmed streaming TTFB); on Windows/Linux configs the ggml-based `audiocpp-qwen3` provider (`platforms: [any]`, ~2.2 s TTFB via its incremental streaming endpoint) is the portable fallback — point its `command` at a platform-appropriate `audiocpp_server` build.
+- Explicitly requesting a model whose provider cannot run on this machine returns a 404 explaining why, with the `auto` recommendation.
+
+Automatic engine provisioning:
+
+- Providers may declare a `provision` block in `config.yaml`: platform-keyed engine `check_paths` and `build` commands (audio.cpp reuses its own `scripts/build_metal.sh` / `build_linux.sh` / `build_windows.ps1`), plus `models` as Hugging Face snapshot packages (`repo_id`, `target_dir`, `required_files`, mirroring audio.cpp `tools/model_manager.py`).
+- Loading a provider whose engine binary or model weights are missing does not fail: with `auto: true` it starts a background provisioning job (build + download) and returns a not-loaded status carrying the job state; once done, the next load starts the sidecar normally.
+- `POST /providers/{provider_id}/provision` starts (or `{"force": true}` re-runs) provisioning explicitly; `GET /providers/{provider_id}/provision` reports state, missing artifacts, and the build log path (`logs/provision-<id>.log`). `GET /v1/routing` includes per-provider `provisioned` state.
+- `command_by_platform` lets one config file serve every machine: the entry matching the current platform (`darwin-arm64`, `windows`, `any`, …) is used as the provider `command`, falling back to `command`.
+- Caveat: darwin flows are verified end-to-end; the linux/windows build commands and binary paths follow audio.cpp's shipped scripts but have not been executed on a real linux/windows box yet.
 
 Voices and paralinguistics:
 
@@ -504,7 +520,7 @@ Purpose: Qwen3-TTS MLX adapter for Apple Silicon true streaming via `mlx-audio`,
 Runtime:
 
 - Adapter kind: `qwen3`
-- Sidecar cwd: `/Users/liam/voice-lab/qwen3-mlx`
+- Sidecar cwd: `/Users/liam/voice-lab/universal-tts/sidecars/qwen3-mlx`
 - Command: `/Users/liam/voice-lab/mlx-chatterbox/.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8766`
 - Base URL: `http://127.0.0.1:8766`
 - Health: `/health`

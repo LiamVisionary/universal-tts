@@ -30,6 +30,11 @@ job_queue = JobQueue(registry)
 app = FastAPI(title="Universal TTS", version="0.1.0")
 
 
+@app.on_event("shutdown")
+async def shutdown_sidecars():
+    await registry.shutdown()
+
+
 async def _pcm_playback_chunks(
     chunks: AsyncIterator[bytes],
     *,
@@ -115,6 +120,20 @@ async def _pcm_playback_chunks(
                 await asyncio.sleep(delay)
 
 
+async def _peek_first_chunk(chunks: AsyncIterator[bytes]) -> tuple[bytes, AsyncIterator[bytes]]:
+    """Pull the first non-empty chunk so the committed HTTP status reflects real
+    upstream success. A streaming response commits its 200 before the first body
+    byte, so a provider that stalls/fails/produces nothing would otherwise reach
+    the client as a false-success 200 with 0 bytes. By draining the first byte
+    here, upstream first-byte failures (5xx, stream watchdog, empty stream) surface
+    as an exception the caller can turn into a real 5xx. Returns (first, rest)."""
+    ait = chunks.__aiter__()
+    while True:
+        chunk = await ait.__anext__()  # StopAsyncIteration if empty; upstream errors propagate
+        if chunk:
+            return chunk, ait
+
+
 class LoadRequest(BaseModel):
     mode: str = "multi"
     force: bool = False
@@ -145,6 +164,14 @@ async def memory():
     return get_memory_snapshot().__dict__
 
 
+@app.get("/v1/routing")
+@app.get("/routing")
+async def routing():
+    """Machine-aware provider routing: which providers this machine supports
+    and which one requests with model 'auto' (or tts-1) will use."""
+    return registry.routing_info()
+
+
 @app.get("/providers")
 @app.get("/runtimes")
 async def providers():
@@ -160,12 +187,49 @@ async def providers():
                 "loaded": status.loaded,
                 "healthy": status.healthy,
                 "details": status.details,
+                "restart_count": status.details.get("restart_count", 0),
+                "last_restart_at": status.details.get("last_restart_at"),
+                "last_restart_reason": status.details.get("last_restart_reason"),
+                "last_successful_synth": status.details.get("last_successful_synth"),
+                "last_error": status.details.get("last_error"),
                 "notes": runtime.providers[provider_id].notes,
             }
             for provider_id, status in statuses.items()
         },
         "memory": get_memory_snapshot().__dict__,
     }
+
+
+class ProvisionRequest(BaseModel):
+    force: bool = False
+
+
+@app.post("/providers/{provider_id}/provision")
+@app.post("/runtimes/{provider_id}/provision")
+async def provision_provider(provider_id: str, req: ProvisionRequest | None = None):
+    """Build the provider's engine and download its model weights for this machine."""
+    try:
+        cfg = registry.runtime.providers[provider_id]
+    except KeyError:
+        raise HTTPException(404, f"unknown provider: {provider_id}")
+    try:
+        status = registry.provisioner.start(cfg, force=bool(req.force) if req else False)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "provider": provider_id, "provisioning": status, "state": registry.provisioner.state(cfg)}
+
+
+@app.get("/providers/{provider_id}/provision")
+@app.get("/runtimes/{provider_id}/provision")
+async def provision_status(provider_id: str):
+    try:
+        cfg = registry.runtime.providers[provider_id]
+    except KeyError:
+        raise HTTPException(404, f"unknown provider: {provider_id}")
+    state = registry.provisioner.state(cfg)
+    if state is None:
+        return {"ok": True, "provider": provider_id, "provision": None, "detail": "no provision configuration declared"}
+    return {"ok": True, "provider": provider_id, "provision": state}
 
 
 @app.post("/providers/{provider_id}/load")
@@ -432,7 +496,31 @@ async def speech_stream(request: Request):
                 "X-Universal-TTS-Realtime-Pacing": str(realtime_pacing).lower(),
                 "X-Universal-TTS-PCM-Declick-MS": str(declick_ms),
             })
-        return StreamingResponse(chunks, media_type=content_type, headers=headers)
+        # Contract fix: commit the 200 only after a real audio byte arrives, so a
+        # stalled/failed provider returns a 5xx instead of a 200 with 0 bytes.
+        try:
+            first_chunk, rest = await _peek_first_chunk(chunks)
+        except StopAsyncIteration:
+            return JSONResponse(
+                status_code=502,
+                content={"error": "provider produced no audio", "detail": "empty stream (0 bytes)"},
+            )
+        except HTTPException:
+            raise
+        except asyncio.CancelledError:
+            raise  # client disconnected — propagate cancellation, don't mask as 5xx
+        except BaseException as e:
+            return JSONResponse(
+                status_code=502,
+                content={"error": "provider streaming failed before first audio byte", "detail": str(e)[:500]},
+            )
+
+        async def _committed_stream() -> AsyncIterator[bytes]:
+            yield first_chunk
+            async for chunk in rest:
+                yield chunk
+
+        return StreamingResponse(_committed_stream(), media_type=content_type, headers=headers)
     except KeyError as e:
         raise HTTPException(404, str(e))
     except RuntimeError as e:

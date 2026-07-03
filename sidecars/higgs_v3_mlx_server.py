@@ -17,7 +17,7 @@ SAMPLE_RATE = 24000
 MODEL_DIR = Path(os.environ.get("HIGGS_MLX_MODEL_DIR", "/Users/liam/voice-lab/models/TTS/higgs_audio_v3/higgs-audio-v3-tts-4b"))
 MODEL_NAME = os.environ.get("HIGGS_MLX_MODEL_NAME", "higgs-audio-v3-tts-4b-mlx")
 DEFAULT_REF_AUDIO = os.environ.get("HIGGS_MLX_VOICE01_REF_AUDIO", "/Users/liam/voice-lab/Chatterbox-TTS-Server/voices/voice1-all-samples-10s.wav")
-DEFAULT_REF_TEXT = os.environ.get("HIGGS_MLX_VOICE01_REF_TEXT", "They let me pick. Did I ever tell you that? Choose whichever Spartan I wanted. You know me. I did my research. Watched as you became the soldier we needed you to be.")
+DEFAULT_REF_TEXT = os.environ.get("HIGGS_MLX_VOICE01_REF_TEXT", "They let me pick. Did I ever tell you that? Choose whichever Spartan I wanted. You know me.")
 
 app = FastAPI(title="Universal TTS Higgs Audio v3 MLX Sidecar", version="0.1.0")
 _model = None

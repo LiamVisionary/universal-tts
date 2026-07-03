@@ -1,0 +1,7 @@
+{
+  "id": "voice01",
+  "name": "voice01 fast reference clone",
+  "ref_audio": "/Users/liam/voice-lab/Chatterbox-TTS-Server/voices/voice1-all-samples-10s.wav",
+  "ref_text": "They let me pick. Did I ever tell you that? Choose whichever Spartan I wanted. You know me.",
+  "notes": "Short 10s voice01 reference for lower Qwen MLX ICL prefill latency. The full 78s reference is preserved in qwen3-tts-service/voice_profiles/voice1-all-samples/profile.json."
+}

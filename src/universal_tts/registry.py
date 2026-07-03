@@ -8,15 +8,21 @@ import asyncio
 from universal_tts.audio import convert_audio_format, normalize_format
 from universal_tts.config import RuntimeConfig
 from universal_tts.memory import MemoryGuard, MemorySnapshot, get_memory_snapshot
+from universal_tts.platforms import current_platform, platform_matches
+from universal_tts.provisioning import EngineProvisioner
 from universal_tts.providers.base import ProviderStatus, TTSRequest, TTSProvider
 from universal_tts.providers.http_backed import PROVIDER_FACTORIES
 from universal_tts.providers.kitten import KittenTTSProvider
 from universal_tts.voice_library import VoiceLibrary
 
+AUTO_MODEL_ALIASES = {"auto", "tts-1", "tts-1-hd", "gpt-4o-mini-tts"}
+
 
 class ProviderRegistry:
-    def __init__(self, runtime: RuntimeConfig, provider_factories: dict | None = None, memory_snapshot: Callable[[], MemorySnapshot] = get_memory_snapshot):
+    def __init__(self, runtime: RuntimeConfig, provider_factories: dict | None = None, memory_snapshot: Callable[[], MemorySnapshot] = get_memory_snapshot, machine_platform: str | None = None):
         self.runtime = runtime
+        self.machine_platform = machine_platform or current_platform()
+        self.provisioner = EngineProvisioner(machine_platform=self.machine_platform)
         self.provider_factories = {**PROVIDER_FACTORIES, "kitten": KittenTTSProvider, **(provider_factories or {})}
         self.memory_snapshot = memory_snapshot
         self.memory_guard = MemoryGuard(runtime.memory.get("reserve_gb", 12))
@@ -35,23 +41,124 @@ class ProviderRegistry:
             out[provider_id] = await provider.status()
         return out
 
+    async def shutdown(self) -> None:
+        for provider in self.providers.values():
+            if hasattr(provider, "shutdown"):
+                await provider.shutdown()  # type: ignore[attr-defined]
+            elif hasattr(provider, "unload"):
+                await provider.unload()
+
+    def platform_support(self, provider_id: str) -> tuple[bool, str]:
+        cfg = self.runtime.providers[provider_id]
+        platforms = cfg.options.get("platforms")
+        if not platforms:
+            return True, "no platform constraints declared"
+        for entry in platforms:
+            if platform_matches(entry, self.machine_platform):
+                return True, f"matches platform '{entry}'"
+        return False, f"requires one of {list(platforms)}; this machine is {self.machine_platform}"
+
+    def auto_provider(self) -> str:
+        """Pick the fastest platform-supported provider for this machine.
+
+        Providers declare `platforms` and a measured `auto_route_ttfb_ms` in
+        config options; ranked providers beat unranked ones, then config order
+        breaks ties.
+        """
+        best: str | None = None
+        best_key: tuple[int, float] | None = None
+        for provider_id, cfg in self.runtime.providers.items():
+            supported, _reason = self.platform_support(provider_id)
+            if not supported:
+                continue
+            ttfb = cfg.options.get("auto_route_ttfb_ms")
+            key = (0, float(ttfb)) if ttfb is not None else (1, 0.0)
+            if best_key is None or key < best_key:
+                best, best_key = provider_id, key
+        if best is None:
+            raise KeyError(f"no configured TTS provider supports this machine ({self.machine_platform})")
+        return best
+
     def provider_for_model(self, model: str) -> str:
+        provider_id: str | None = None
         if model in self.runtime.model_to_provider:
-            return self.runtime.model_to_provider[model]
-        if model in self.providers:
-            return model
-        # OpenAI generic tts-1 maps to first configured provider.
-        if model in {"tts-1", "tts-1-hd", "gpt-4o-mini-tts"} and self.providers:
-            return next(iter(self.providers))
-        raise KeyError(f"unknown model/provider: {model}")
+            provider_id = self.runtime.model_to_provider[model]
+        elif model in self.providers:
+            provider_id = model
+        elif model in AUTO_MODEL_ALIASES and self.providers:
+            # 'auto' and OpenAI generic ids route to the best provider for this machine.
+            return self.auto_provider()
+        if provider_id is None:
+            raise KeyError(f"unknown model/provider: {model}")
+        supported, reason = self.platform_support(provider_id)
+        if not supported:
+            recommended = None
+            try:
+                recommended = self.auto_provider()
+            except KeyError:
+                pass
+            hint = f"; use model 'auto' (routes to '{recommended}')" if recommended else ""
+            raise KeyError(f"provider '{provider_id}' is not supported on this machine: {reason}{hint}")
+        return provider_id
+
+    def resolve_auto_model(self, provider_id: str, request: TTSRequest) -> TTSRequest:
+        """Replace alias model ids with the provider's own default model."""
+        cfg = self.runtime.providers[provider_id]
+        if request.model in AUTO_MODEL_ALIASES and request.model not in cfg.models and cfg.models:
+            return replace(request, model=str(cfg.options.get("default_model", cfg.models[0])))
+        return request
+
+    def routing_info(self) -> dict[str, Any]:
+        providers: dict[str, Any] = {}
+        for provider_id, cfg in self.runtime.providers.items():
+            supported, reason = self.platform_support(provider_id)
+            provision_state = self.provisioner.state(cfg)
+            providers[provider_id] = {
+                "supported": supported,
+                "reason": reason,
+                "auto_route_ttfb_ms": cfg.options.get("auto_route_ttfb_ms"),
+                "supports_true_streaming": bool(cfg.options.get("supports_true_streaming", False)),
+                "models": list(cfg.models),
+                # None = nothing declared to provision; assumed ready.
+                "provisioned": provision_state["provisioned"] if provision_state else None,
+                "provisioning": provision_state["status"] if provision_state else None,
+            }
+        recommended: dict[str, Any] | None = None
+        try:
+            provider_id = self.auto_provider()
+            cfg = self.runtime.providers[provider_id]
+            recommended = {
+                "provider": provider_id,
+                "model": str(cfg.options.get("default_model", cfg.models[0])) if cfg.models else None,
+            }
+        except KeyError:
+            pass
+        return {
+            "object": "audio.routing",
+            "platform": self.machine_platform,
+            "recommended": recommended,
+            "auto_model_aliases": sorted(AUTO_MODEL_ALIASES),
+            "providers": providers,
+        }
 
     async def load(self, provider_id: str, mode: str = "multi", force: bool = False) -> ProviderStatus:
         if provider_id not in self.providers:
             raise KeyError(f"unknown provider: {provider_id}")
         current = await self.providers[provider_id].status()
-        if current.loaded:
+        if current.loaded and not force:
+            provider = self.providers[provider_id]
+            if hasattr(provider, "ensure_managed"):
+                provider.ensure_managed()  # type: ignore[attr-defined]
             return current
         cfg = self.runtime.providers[provider_id]
+        provision_state = self.provisioner.state(cfg)
+        if provision_state is not None and not provision_state["provisioned"]:
+            details: dict[str, Any] = {"provisioning": provision_state}
+            if provision_state["auto"] or self.provisioner.is_running(provider_id):
+                details["provisioning"]["status"] = self.provisioner.start(cfg)
+            else:
+                details["hint"] = f"POST /providers/{provider_id}/provision to build the engine and fetch models"
+            return ProviderStatus(id=provider_id, loaded=False, healthy=False, details=details)
         self.memory_guard.assert_can_load(provider_id, cfg.estimate_gb, self.memory_snapshot(), force=force)
         if mode == "exclusive":
             statuses = await self.statuses()
@@ -72,7 +179,7 @@ class ProviderRegistry:
             raise ValueError("input is required")
         reserved = {"model", "input", "voice", "response_format", "speed"}
         return TTSRequest(
-            model=payload.get("model") or next(iter(self.providers)),
+            model=payload.get("model") or "auto",
             text=str(payload["input"]),
             voice=payload.get("voice"),
             response_format=payload.get("response_format", "wav"),
@@ -82,6 +189,7 @@ class ProviderRegistry:
 
     async def _synthesize_direct(self, request: TTSRequest) -> tuple[bytes, str]:
         provider_id = self.provider_for_model(request.model)
+        request = self.resolve_auto_model(provider_id, request)
         await self.load(provider_id, mode="multi")
         request = self.apply_saved_voice(provider_id, request)
         audio, content_type = await self.providers[provider_id].synthesize(request)
@@ -92,6 +200,7 @@ class ProviderRegistry:
     async def synthesize(self, payload: dict) -> tuple[bytes, str]:
         request = self.normalize_request(payload)
         provider_id = self.provider_for_model(request.model)
+        request = self.resolve_auto_model(provider_id, request)
         cfg = self.runtime.providers[provider_id]
         max_batch_size = int(cfg.options.get("max_batch_size", cfg.options.get("api_max_batch_size", 1)))
         if payload.get("disable_microbatch") or max_batch_size <= 1:
@@ -339,6 +448,7 @@ class ProviderRegistry:
     async def stream_synthesize(self, payload: dict):
         request = self.normalize_request(payload)
         provider_id = self.provider_for_model(request.model)
+        request = self.resolve_auto_model(provider_id, request)
         await self.load(provider_id, mode="multi")
         provider = self.providers[provider_id]
         request = self.apply_saved_voice(provider_id, request)
