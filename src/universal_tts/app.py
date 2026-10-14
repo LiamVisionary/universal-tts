@@ -16,6 +16,7 @@ from universal_tts.srt import build_srt_cues, render_srt
 from universal_tts.memory import get_memory_snapshot
 from universal_tts.queue import JobQueue
 from universal_tts.registry import ProviderRegistry
+from universal_tts.web_access import install_web_access
 
 CONFIG_PATH = Path(os.environ.get("UNIVERSAL_TTS_CONFIG", Path(__file__).resolve().parents[2] / "config.yaml"))
 
@@ -28,6 +29,9 @@ runtime = load_config(CONFIG_PATH)
 registry = ProviderRegistry(runtime)
 job_queue = JobQueue(registry)
 app = FastAPI(title="Universal TTS", version="0.1.0")
+# The Voice page on hivemindos.app speaks through this engine from the
+# visitor's browser; only the routes it needs answer web pages (web_access.py).
+install_web_access(app)
 
 
 @app.on_event("shutdown")
